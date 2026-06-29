@@ -24,51 +24,51 @@ def chat() -> None:
     plan_mode = False
     supervision = False
 
-    print("🤖 Coding agent ready.")
+    print("Coding agent ready.")
     print("Commands: /plan, /supervision, /exit")
     print("-" * 50)
 
     while True:
-        user_input = input("\n👤 You: ").strip()
+        user_input = input("\nYou: ").strip()
 
         if not user_input:
             continue
 
         if user_input.lower() == "/exit":
-            print(f"\n👋 Finished. {turn} turns, {total_iterations} total iterations.")
+            print(f"\nFinished. {turn} turns, {total_iterations} total iterations.")
             break
 
         if user_input.lower() == "/plan":
             plan_mode = not plan_mode
-            status = "ON ✅" if plan_mode else "OFF ❌"
-            print(f"📋 Plan mode: {status}")
+            status = "ON" if plan_mode else "OFF"
+            print(f"Plan mode: {status}")
             continue
 
         if user_input.lower() == "/supervision":
             supervision = not supervision
-            status = "ON ✅" if supervision else "OFF ❌"
-            print(f"👁️  Supervision: {status}")
+            status = "ON" if supervision else "OFF"
+            print(f"Supervision: {status}")
             continue
 
         messages.append({"role": "user", "content": user_input})
         turn += 1
 
-        print(f"\n{'─' * 50}")
+        print(f"\n{'-' * 50}")
 
         if plan_mode:
-            print("📋 Generating plan...")
+            print("Generating plan...")
             plan = get_plan(messages[:-1], user_input)
-            print(f"\n📋 Plan:\n{plan}\n")
+            print(f"\nPlan:\n{plan}\n")
 
             approval = input("Approve plan? [s/n]: ").strip().lower()
 
-            if approval not in ("s", "si", "sí", "y", "yes"):
-                print("❌ Plan rejected. Task cancelled.")
+            if approval not in ("s", "si", "y", "yes"):
+                print("Plan rejected. Task cancelled.")
                 messages.pop()
                 turn -= 1
                 continue
 
-            print("✅ Plan approved. Executing...\n")
+            print("Plan approved. Executing...\n")
 
         response, iterations = run_agent_turn(
             messages=messages,
@@ -78,8 +78,8 @@ def chat() -> None:
 
         total_iterations += iterations
 
-        print(f"\n🤖 Agent: {response}")
-        print(f"📊 Iterations this turn: {iterations}")
+        print(f"\nAgent: {response}")
+        print(f"Iterations this turn: {iterations}")
 
 
 if __name__ == "__main__":

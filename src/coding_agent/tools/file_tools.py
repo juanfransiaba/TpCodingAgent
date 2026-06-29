@@ -40,7 +40,7 @@ def list_files(directory: str = ".") -> str:
 
         for item in sorted(items):
             full_path = os.path.join(directory, item)
-            marker = "📁" if os.path.isdir(full_path) else "📄"
+            marker = "[DIR]" if os.path.isdir(full_path) else "[FILE]"
             result += f"  {marker} {item}\n"
 
         return result

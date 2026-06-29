@@ -1,7 +1,7 @@
 import json
 
 from coding_agent.core.llm_client import MODEL, client
-from coding_agent.core.permissions import check_permissions
+from coding_agent.core.permissions import check_permissions, requires_approval
 from coding_agent.core.supervision import ask_permission
 from coding_agent.tools.tool_registry import (
     TOOL_FUNCTIONS,
@@ -60,24 +60,34 @@ def run_agent_turn(
 
         for tool_call in msg.tool_calls:
             tool_name = tool_call.function.name
-            args = json.loads(tool_call.function.arguments)
 
-            print(f"    🔧 {tool_name}({args})")
+            try:
+                args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as error:
+                result = f"Invalid tool arguments: {error}"
+                print(f"    ERROR {tool_name}: {result}")
+                append_tool_result(messages, tool_call.id, result)
+                continue
+
+            print(f"    TOOL {tool_name}({args})")
 
             allowed, reason = check_permissions(tool_name, args, config)
 
             if not allowed:
                 result = f"Blocked by policies: {reason}"
-                print(f"    🚫 {result}")
+                print(f"    BLOCKED {result}")
                 append_tool_result(messages, tool_call.id, result)
                 continue
 
-            if supervision and tool_name in TOOLS_WITH_SUPERVISION:
+            needs_approval = supervision and tool_name in TOOLS_WITH_SUPERVISION
+            needs_approval = needs_approval or requires_approval(tool_name, args, config)
+
+            if needs_approval:
                 approved = ask_permission(tool_name, args)
 
                 if not approved:
                     result = f"Action '{tool_name}' rejected by user."
-                    print("    ❌ Rejected")
+                    print("    REJECTED")
                     append_tool_result(messages, tool_call.id, result)
                     continue
 

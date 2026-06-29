@@ -16,6 +16,18 @@ def check_permissions(tool_name: str, args: dict, config: dict) -> tuple[bool, s
     return True, "OK"
 
 
+def requires_approval(tool_name: str, args: dict, config: dict) -> bool:
+    """Checks whether a tool call needs explicit user approval."""
+
+    if tool_name != "run_command":
+        return False
+
+    command = args.get("command", "")
+    approval_patterns = config.get("commands", {}).get("require_approval", [])
+
+    return any(pattern in command for pattern in approval_patterns)
+
+
 def check_command(command: str, config: dict) -> tuple[bool, str]:
     denied_commands = config.get("commands", {}).get("deny", [])
 
@@ -35,13 +47,13 @@ def check_path(tool_name: str, raw_path: str, config: dict) -> tuple[bool, str]:
 
     resolved_path = target_path.resolve()
 
-    if not str(resolved_path).startswith(str(workspace)):
+    try:
+        relative_path = resolved_path.relative_to(workspace).as_posix()
+    except ValueError:
         return False, f"Path outside workspace: {resolved_path}"
 
     permission_type = "write" if tool_name == "write_file" else "read"
     denied_paths = config.get("permissions", {}).get(permission_type, {}).get("deny", [])
-
-    relative_path = resolved_path.relative_to(workspace).as_posix()
 
     for denied in denied_paths:
         if matches_denied_path(relative_path, denied):
