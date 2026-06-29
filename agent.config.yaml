@@ -1,0 +1,27 @@
+workspace: ./cases/football_predictor
+
+permissions:
+  read:
+    deny:
+      - ".env"
+      - "**/*.pem"
+      - "secrets/**"
+
+  write:
+    deny:
+      - ".github/**"
+      - "data/raw/**"
+      - "requirements.txt"
+
+commands:
+  deny:
+    - "rm -rf"
+    - "git push"
+    - "shutdown"
+    - "reboot"
+    - "format"
+
+  require_approval:
+    - "pip install"
+    - "git commit"
+    - "python scripts/evaluate.py"
