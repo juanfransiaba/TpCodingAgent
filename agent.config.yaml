@@ -1,5 +1,16 @@
 workspace: ./cases/football_predictor
 
+memory:
+  path: ./memory/project_memory.json
+
+observability:
+  provider: langfuse
+  local_traces_path: ./runs/traces
+  pricing:
+    gpt-5-nano:
+      input_per_1m_tokens: 0.05
+      output_per_1m_tokens: 0.40
+
 permissions:
   read:
     deny:

@@ -1,7 +1,12 @@
 import json
+import time
 
 from coding_agent.core.llm_client import MODEL, client
-from coding_agent.core.permissions import check_permissions, requires_approval
+from coding_agent.core.permissions import (
+    check_permissions,
+    normalize_tool_args,
+    requires_approval,
+)
 from coding_agent.core.supervision import ask_permission
 from coding_agent.core.task_state import TaskState
 from coding_agent.tools.tool_registry import (
@@ -16,6 +21,7 @@ def run_agent_turn(
     config: dict,
     supervision: bool = False,
     task_state: TaskState | None = None,
+    trace=None,
 ) -> tuple[str, int]:
     """Runs the inner loop: LLM -> tool calls -> tool results -> LLM."""
 
@@ -29,14 +35,42 @@ def run_agent_turn(
 
         print(f"  [iteration {iterations}] Calling LLM...", end="", flush=True)
 
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-        )
+        llm_started_at = time.perf_counter()
+
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+        except Exception as error:
+            latency_seconds = time.perf_counter() - llm_started_at
+            if trace:
+                trace.record_llm_call(
+                    iteration=iterations,
+                    messages=messages,
+                    model=MODEL,
+                    output="",
+                    latency_seconds=latency_seconds,
+                    usage=None,
+                    error=str(error),
+                )
+            raise
+
+        llm_latency_seconds = time.perf_counter() - llm_started_at
 
         msg = response.choices[0].message
+
+        if trace:
+            trace.record_llm_call(
+                iteration=iterations,
+                messages=messages,
+                model=MODEL,
+                output=msg.content or "",
+                latency_seconds=llm_latency_seconds,
+                usage=getattr(response, "usage", None),
+            )
 
         assistant_msg = {
             "role": "assistant",
@@ -89,6 +123,15 @@ def run_agent_turn(
                 print(f"    BLOCKED {result}")
                 if task_state:
                     task_state.add_tool_call(tool_name, args, False, result, iterations)
+                if trace:
+                    trace.record_tool_call(
+                        tool_name=tool_name,
+                        args=args,
+                        allowed=False,
+                        result=result,
+                        iteration=iterations,
+                        latency_seconds=0.0,
+                    )
                 append_tool_result(messages, tool_call.id, result)
                 continue
 
@@ -103,6 +146,15 @@ def run_agent_turn(
                     print("    REJECTED")
                     if task_state:
                         task_state.add_tool_call(tool_name, args, False, result, iterations)
+                    if trace:
+                        trace.record_tool_call(
+                            tool_name=tool_name,
+                            args=args,
+                            allowed=False,
+                            result=result,
+                            iteration=iterations,
+                            latency_seconds=0.0,
+                        )
                     append_tool_result(messages, tool_call.id, result)
                     continue
 
@@ -111,10 +163,23 @@ def run_agent_turn(
             if not function:
                 result = f"Unknown tool: {tool_name}"
             else:
-                result = function(**args)
+                execution_args = normalize_tool_args(tool_name, args, config)
+                tool_started_at = time.perf_counter()
+                result = function(**execution_args)
+                tool_latency_seconds = time.perf_counter() - tool_started_at
 
             if task_state:
                 task_state.add_tool_call(tool_name, args, True, str(result), iterations)
+
+            if trace:
+                trace.record_tool_call(
+                    tool_name=tool_name,
+                    args=args,
+                    allowed=True,
+                    result=str(result),
+                    iteration=iterations,
+                    latency_seconds=tool_latency_seconds if function else 0.0,
+                )
 
             append_tool_result(messages, tool_call.id, str(result))
 

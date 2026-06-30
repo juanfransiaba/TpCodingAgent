@@ -7,3 +7,6 @@ venv/
 .ipynb_checkpoints/
 .idea/
 runs/task_states/*.json
+runs/traces/*.json
+memory/project_memory.json
+storage/vector_store/

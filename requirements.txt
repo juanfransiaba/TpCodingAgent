@@ -3,3 +3,4 @@ tavily-python
 python-dotenv
 pyyaml
 pandas
+langfuse

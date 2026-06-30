@@ -1,24 +1,19 @@
 from pathlib import Path
 
+from coding_agent.agents.main_agent import prepare_task
 from coding_agent.core.config import load_config
 from coding_agent.core.harness import run_agent_turn
+from coding_agent.core.llm_client import MODEL
 from coding_agent.core.planner import get_plan
 from coding_agent.core.task_state import TaskState
-
-SYSTEM_PROMPT = """
-You are a coding agent. Your job is to help with programming tasks by using tools.
-
-Rules:
-- Use tools when you need to inspect files, modify code, run commands, or search information.
-- Do not claim that you changed files unless you actually used write_file.
-- Do not claim that tests passed unless you actually used run_command.
-- Respect the configured workspace and security policies.
-- If you do not have enough evidence, explain what is missing and ask for help.
-"""
+from coding_agent.memory.project_memory import ProjectMemory
+from coding_agent.observability.tracing import TraceRecorder
+from coding_agent.prompts.system_prompt import SYSTEM_PROMPT
 
 
 def chat() -> None:
     config = load_config()
+    memory = ProjectMemory(config.get("memory", {}).get("path", "memory/project_memory.json"))
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -75,22 +70,48 @@ def chat() -> None:
 
             print("Plan approved. Executing...\n")
 
-        response, iterations = run_agent_turn(
-            messages=messages,
-            config=config,
-            supervision=supervision,
-            task_state=task_state,
-        )
+        trace = TraceRecorder(task_state=task_state, model=MODEL, config=config)
 
-        total_iterations += iterations
-        task_state.mark_completed(response)
-        state_path = task_state.save_json(
-            Path("runs") / "task_states" / f"{task_state.task_id}.json"
-        )
+        with trace.trace_task():
+            coordination_content = prepare_task(task_state, config, memory=memory)
+            coordination_message = {
+                "role": "system",
+                "content": coordination_content,
+            }
+            messages.insert(
+                len(messages) - 1,
+                coordination_message,
+            )
+            trace.record_event(
+                "coordination_brief",
+                metadata={"content": coordination_content},
+            )
+
+            response, iterations = run_agent_turn(
+                messages=messages,
+                config=config,
+                supervision=supervision,
+                task_state=task_state,
+                trace=trace,
+            )
+
+            total_iterations += iterations
+            task_state.mark_completed(response)
+            memory.record_task_state(task_state)
+            trace.record_final(task_state)
+            state_path = task_state.save_json(
+                Path("runs") / "task_states" / f"{task_state.task_id}.json"
+            )
+            trace_path = trace.save_local_trace()
+            trace.flush()
+
+            messages.remove(coordination_message)
 
         print(f"\nAgent: {response}")
         print(f"Iterations this turn: {iterations}")
         print(f"Task state saved to: {state_path}")
+        print(f"Project memory saved to: {memory.storage_path}")
+        print(f"Trace saved to: {trace_path}")
 
 
 if __name__ == "__main__":

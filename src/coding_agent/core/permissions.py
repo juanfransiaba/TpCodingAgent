@@ -7,13 +7,29 @@ def check_permissions(tool_name: str, args: dict, config: dict) -> tuple[bool, s
     if tool_name == "run_command":
         return check_command(args.get("command", ""), config)
 
-    if tool_name in ("read_file", "write_file"):
+    if tool_name in ("read_file", "write_file", "view_file"):
         return check_path(tool_name, args.get("path", ""), config)
 
-    if tool_name == "list_files":
+    if tool_name in ("list_files", "tree_files", "search_code"):
         return check_path(tool_name, args.get("directory", "."), config)
 
     return True, "OK"
+
+
+def normalize_tool_args(tool_name: str, args: dict, config: dict) -> dict:
+    """Resolve path arguments against the configured workspace."""
+
+    normalized_args = args.copy()
+
+    if tool_name in ("read_file", "write_file", "view_file") and "path" in args:
+        normalized_args["path"] = str(resolve_workspace_path(args["path"], config))
+
+    if tool_name in ("list_files", "tree_files", "search_code"):
+        normalized_args["directory"] = str(
+            resolve_workspace_path(args.get("directory", "."), config)
+        )
+
+    return normalized_args
 
 
 def requires_approval(tool_name: str, args: dict, config: dict) -> bool:
@@ -39,13 +55,8 @@ def check_command(command: str, config: dict) -> tuple[bool, str]:
 
 
 def check_path(tool_name: str, raw_path: str, config: dict) -> tuple[bool, str]:
-    workspace = Path(config.get("workspace", ".")).resolve()
-    target_path = Path(raw_path)
-
-    if not target_path.is_absolute():
-        target_path = workspace / target_path
-
-    resolved_path = target_path.resolve()
+    workspace = get_workspace(config)
+    resolved_path = resolve_workspace_path(raw_path, config)
 
     try:
         relative_path = resolved_path.relative_to(workspace).as_posix()
@@ -60,6 +71,20 @@ def check_path(tool_name: str, raw_path: str, config: dict) -> tuple[bool, str]:
             return False, f"Path blocked by policy: '{denied}'"
 
     return True, "OK"
+
+
+def get_workspace(config: dict) -> Path:
+    return Path(config.get("workspace", ".")).resolve()
+
+
+def resolve_workspace_path(raw_path: str, config: dict) -> Path:
+    workspace = get_workspace(config)
+    target_path = Path(raw_path)
+
+    if not target_path.is_absolute():
+        target_path = workspace / target_path
+
+    return target_path.resolve()
 
 
 def matches_denied_path(relative_path: str, pattern: str) -> bool:
