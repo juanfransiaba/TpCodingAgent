@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from coding_agent.core.config import load_config
 from coding_agent.core.harness import run_agent_turn
 from coding_agent.core.planner import get_plan
+from coding_agent.core.task_state import TaskState
 
 SYSTEM_PROMPT = """
 You are a coding agent. Your job is to help with programming tasks by using tools.
@@ -51,6 +54,8 @@ def chat() -> None:
             continue
 
         messages.append({"role": "user", "content": user_input})
+        task_state = TaskState(original_request=user_input)
+        task_state.add_progress("User request received.")
         turn += 1
 
         print(f"\n{'-' * 50}")
@@ -74,12 +79,18 @@ def chat() -> None:
             messages=messages,
             config=config,
             supervision=supervision,
+            task_state=task_state,
         )
 
         total_iterations += iterations
+        task_state.mark_completed(response)
+        state_path = task_state.save_json(
+            Path("runs") / "task_states" / f"{task_state.task_id}.json"
+        )
 
         print(f"\nAgent: {response}")
         print(f"Iterations this turn: {iterations}")
+        print(f"Task state saved to: {state_path}")
 
 
 if __name__ == "__main__":
