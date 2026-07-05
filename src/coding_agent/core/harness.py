@@ -85,13 +85,13 @@ def run_agent_turn(
         msg = response.choices[0].message
 
         if trace:
-                trace.record_llm_call(
-                    iteration=iterations,
-                    messages=messages,
-                    model=model,
-                    output=msg.content or "",
-                    latency_seconds=llm_latency_seconds,
-                    usage=getattr(response, "usage", None),
+            trace.record_llm_call(
+                iteration=iterations,
+                messages=messages,
+                model=model,
+                output=msg.content or "",
+                latency_seconds=llm_latency_seconds,
+                usage=getattr(response, "usage", None),
             )
 
         assistant_msg = {

@@ -1,69 +1,138 @@
 # Next Steps
 
-## Bloqueados Por Credenciales
+Este documento resume lo que falta despues de las ultimas mejoras del agente.
 
-### RAG real
+## Estado Actual
 
-La implementacion ya existe, pero la ingesta real requiere una `OPENAI_API_KEY` valida.
+Ya esta funcionando:
 
-Comando:
+- agente modular con orquestador, subagentes y harness propio;
+- RAG local con ingesta y retrieval;
+- memoria persistente;
+- tools de repo, comandos, archivos, web, RAG y memoria;
+- observabilidad local y Langfuse;
+- prueba end-to-end en `scripts/run_e2e_smoke.py`;
+- tests unitarios basicos;
+- regla RAG-first en el system prompt.
+
+## Prioridad Alta
+
+### 1. Dataset real del caso
+
+Hoy solo existe:
+
+```text
+cases/football_predictor/data/results_sample.csv
+```
+
+Para la entrega hace falta agregar:
+
+```text
+cases/football_predictor/data/results.csv
+```
+
+Debe tener estas columnas:
+
+```text
+date
+home_team
+away_team
+home_score
+away_score
+tournament
+city
+country
+neutral
+```
+
+### 2. Prediccion y evaluacion reales
+
+Cuando este el dataset:
+
+```powershell
+$env:PYTHONPATH="cases/football_predictor/src"
+python cases/football_predictor/scripts/predict_match.py --team-a Argentina --team-b France --data cases/football_predictor/data/results.csv
+```
+
+```powershell
+$env:PYTHONPATH="cases/football_predictor/src"
+python cases/football_predictor/scripts/evaluate.py --data cases/football_predictor/data/results.csv
+```
+
+Guardar la salida para la entrega.
+
+### 3. Evidencia de Langfuse
+
+Capturar al menos una traza completa donde se vea:
+
+- prompt;
+- modelo;
+- tool calls;
+- RAG docs recuperados;
+- web search;
+- memoria;
+- latencia;
+- tokens/costo si estan disponibles;
+- resultado final.
+
+La prueba end-to-end ya ayuda con esto:
 
 ```powershell
 $env:PYTHONPATH="src"
-python -m coding_agent.rag.ingest
+python scripts/run_e2e_smoke.py
 ```
 
-Resultado esperado:
+### 4. Segunda tarea de evidencia
+
+Ya hay evidencia de una tarea con RAG. Falta una segunda tarea que demuestre
+memoria persistente o cambio de estrategia.
+
+Prompt sugerido para memoria:
 
 ```text
-storage/vector_store/index.json
+Segun la memoria del proyecto, que regla o decision importante se registro sobre data leakage?
 ```
 
-### Langfuse real
-
-La integracion ya existe, pero para enviar trazas a Langfuse hay que configurar:
-
-```env
-LANGFUSE_SECRET_KEY=...
-LANGFUSE_PUBLIC_KEY=...
-LANGFUSE_BASE_URL=https://cloud.langfuse.com
-```
-
-Despues ejecutar al menos una tarea real del agente y capturar la traza desde Langfuse.
-
-## Siguiente Trabajo Recomendado
-
-1. Configurar keys correctas.
-2. Ejecutar ingesta RAG.
-3. Probar `rag_search` con una consulta sobre data leakage.
-4. Ejecutar una tarea del agente que use RAG.
-5. Ejecutar una tarea del agente que use memoria persistente.
-6. Guardar evidencia en `docs/EVIDENCE_TEMPLATE.md`.
-7. Sacar captura de Langfuse.
-8. Redactar reflexion final.
-
-## Prompts Sugeridos Para Pruebas
-
-### Prueba RAG
+Prompt sugerido para cambio de estrategia:
 
 ```text
-Usando la documentacion del RAG, explicame como evitar data leakage al calcular features temporales con pandas.
+Intenta ejecutar la evaluacion del predictor. Si falla por falta del dataset real, explica que evidencia falta y propone una alternativa segura.
 ```
 
-### Prueba Memoria
+## Prioridad Media
+
+### 5. Redaccion final
+
+Escribir la narrativa de entrega:
+
+- caso de uso;
+- criterio de tarea cumplida;
+- arquitectura;
+- RAG;
+- memoria;
+- observabilidad;
+- reflexion final.
+
+Material ya disponible:
 
 ```text
-Recorda que para este proyecto preferimos validar cambios con compileall antes de correr evaluaciones mas pesadas.
+README.md
+ESTADO_Y_PENDIENTES.md
+docs/ARCHITECTURE.md
+docs/E2E_SMOKE_TEST.md
+cases/football_predictor/README.md
 ```
 
-Luego:
+### 6. Tests adicionales
 
-```text
-Segun la memoria del proyecto, que comando conviene correr primero para validar cambios?
-```
+Opcionalmente sumar tests para:
 
-### Prueba Cambio De Estrategia
+- `CodingAgentOrchestrator`;
+- manejo de errores en observabilidad;
+- permisos de commands con mas casos borde.
 
-```text
-Intenta ejecutar la evaluacion del predictor. Si el comando requiere aprobacion o falla, explica que paso y propone una alternativa segura.
-```
+## Prioridad Baja
+
+- Agregar mas documentos a `rag_docs/`.
+- Mejorar autodescubrimiento de tools estilo plugin.
+- Refinar costos estimados si se cambia de modelo.
