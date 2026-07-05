@@ -1,24 +1,31 @@
-from coding_agent.agents import explorer, implementer, researcher, reviewer, tester
+from coding_agent.agents import explorer, researcher
+from coding_agent.agents.pipeline import default_pipeline
+from coding_agent.core.contracts import AgentContext, MemoryStore
 from coding_agent.core.task_state import TaskState
-from coding_agent.memory.project_memory import ProjectMemory
+from coding_agent.rag.retriever import LocalRetriever
 
 
 def prepare_task(
     task_state: TaskState,
     config: dict,
-    memory: ProjectMemory | None = None,
+    memory: MemoryStore | None = None,
 ) -> str:
-    """Run lightweight subagents and build a shared brief for the LLM."""
+    """Run lightweight evidence agents and the specialized agent pipeline."""
 
     task_state.add_progress("Main agent started subagent coordination.")
+
+    context = AgentContext(
+        config=config,
+        memory=memory,
+        retriever=LocalRetriever(),
+    )
+    pipeline = default_pipeline()
 
     subagent_summaries = [
         explorer.run(task_state, config),
         researcher.run(task_state, config, memory=memory),
-        implementer.run(task_state, config),
-        tester.run(task_state, config),
-        reviewer.run(task_state, config),
     ]
+    subagent_summaries.extend(pipeline.run(task_state, context))
 
     task_state.add_progress("Main agent finished subagent coordination.")
 
@@ -32,7 +39,7 @@ def prepare_task(
 def build_coordination_brief(
     task_state: TaskState,
     subagent_summaries: list[str],
-    memory: ProjectMemory | None = None,
+    memory: MemoryStore | None = None,
 ) -> str:
     """Convert shared state into a concise message for the model context."""
 

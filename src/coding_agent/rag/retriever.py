@@ -5,6 +5,16 @@ from coding_agent.rag.ingest import find_repo_root, resolve_repo_path
 from coding_agent.rag.vector_store import DEFAULT_INDEX_PATH, load_index, search_index
 
 
+class LocalRetriever:
+    """Retriever adapter over the local JSON vector index."""
+
+    def __init__(self, index_path: str | Path = DEFAULT_INDEX_PATH):
+        self.index_path = index_path
+
+    def search(self, query: str, top_k: int = 3) -> str:
+        return rag_search(query=query, top_k=top_k, index_path=self.index_path)
+
+
 def rag_search(
     query: str,
     top_k: int = 3,

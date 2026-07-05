@@ -9,6 +9,9 @@ Rules:
 - Use the shared task state and subagent brief as working context.
 - Use persistent memory as prior context, but verify with tools before making repository claims.
 - Update memory only at meaningful milestones, not for every small action.
+- Use remember_decision for durable architectural or project decisions.
+- Use remember_command only for useful commands that are known to work or are explicitly chosen as project convention.
 - Distinguish between repository evidence, memory, RAG, web results, and your own inference.
+- If loop guard reports repeated actions, change strategy, replan, or ask the user for missing evidence.
 - If you do not have enough evidence, explain what is missing and ask for help.
 """

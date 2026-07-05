@@ -1,4 +1,4 @@
-from coding_agent.core.llm_client import MODEL, client
+from coding_agent.core.llm_client import default_llm_client
 
 
 def get_plan(messages: list[dict], task: str) -> str:
@@ -16,9 +16,5 @@ def get_plan(messages: list[dict], task: str) -> str:
         }
     ]
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=plan_messages,
-    )
-
+    response = default_llm_client.chat(messages=plan_messages)
     return response.choices[0].message.content

@@ -1,8 +1,8 @@
 from pathlib import Path
 
+from coding_agent.core.contracts import MemoryStore
 from coding_agent.core.permissions import check_permissions
 from coding_agent.core.task_state import TaskState
-from coding_agent.memory.project_memory import ProjectMemory
 from coding_agent.prompts.researcher_prompt import RESEARCHER_PROMPT
 
 DOC_PATTERNS = ("README.md", "SPEC.md", "docs")
@@ -11,7 +11,7 @@ DOC_PATTERNS = ("README.md", "SPEC.md", "docs")
 def run(
     task_state: TaskState,
     config: dict,
-    memory: ProjectMemory | None = None,
+    memory: MemoryStore | None = None,
 ) -> str:
     """Collect local documentation sources and identify research gaps."""
 

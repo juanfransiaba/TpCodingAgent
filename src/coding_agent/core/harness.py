@@ -1,7 +1,10 @@
 import json
 import time
+from collections.abc import Callable
+from typing import Any
 
-from coding_agent.core.llm_client import MODEL, client
+from coding_agent.core.llm_client import MODEL, default_llm_client
+from coding_agent.core.loop_guard import LoopGuard
 from coding_agent.core.permissions import (
     check_permissions,
     normalize_tool_args,
@@ -22,10 +25,25 @@ def run_agent_turn(
     supervision: bool = False,
     task_state: TaskState | None = None,
     trace=None,
+    llm_client=None,
+    tools: list[dict] | None = None,
+    tool_functions: dict[str, Callable[..., Any]] | None = None,
+    tools_with_supervision: set[str] | None = None,
+    verbose: bool = True,
 ) -> tuple[str, int]:
     """Runs the inner loop: LLM -> tool calls -> tool results -> LLM."""
 
     iterations = 0
+    loop_guard = LoopGuard()
+    active_llm_client = llm_client or default_llm_client
+    active_tools = TOOLS if tools is None else tools
+    active_tool_functions = TOOL_FUNCTIONS if tool_functions is None else tool_functions
+    active_tools_with_supervision = (
+        TOOLS_WITH_SUPERVISION
+        if tools_with_supervision is None
+        else tools_with_supervision
+    )
+    model = getattr(active_llm_client, "model", MODEL)
 
     while True:
         iterations += 1
@@ -33,15 +51,19 @@ def run_agent_turn(
             task_state.set_iterations(iterations)
             task_state.add_progress(f"Calling LLM for iteration {iterations}.")
 
-        print(f"  [iteration {iterations}] Calling LLM...", end="", flush=True)
+        log(
+            f"  [iteration {iterations}] Calling LLM...",
+            verbose=verbose,
+            end="",
+            flush=True,
+        )
 
         llm_started_at = time.perf_counter()
 
         try:
-            response = client.chat.completions.create(
-                model=MODEL,
+            response = active_llm_client.chat(
                 messages=messages,
-                tools=TOOLS,
+                tools=active_tools,
                 tool_choice="auto",
             )
         except Exception as error:
@@ -50,7 +72,7 @@ def run_agent_turn(
                 trace.record_llm_call(
                     iteration=iterations,
                     messages=messages,
-                    model=MODEL,
+                    model=model,
                     output="",
                     latency_seconds=latency_seconds,
                     usage=None,
@@ -63,13 +85,13 @@ def run_agent_turn(
         msg = response.choices[0].message
 
         if trace:
-            trace.record_llm_call(
-                iteration=iterations,
-                messages=messages,
-                model=MODEL,
-                output=msg.content or "",
-                latency_seconds=llm_latency_seconds,
-                usage=getattr(response, "usage", None),
+                trace.record_llm_call(
+                    iteration=iterations,
+                    messages=messages,
+                    model=model,
+                    output=msg.content or "",
+                    latency_seconds=llm_latency_seconds,
+                    usage=getattr(response, "usage", None),
             )
 
         assistant_msg = {
@@ -93,12 +115,15 @@ def run_agent_turn(
         messages.append(assistant_msg)
 
         if not msg.tool_calls:
-            print(" -> final response")
+            log(" -> final response", verbose=verbose)
             if task_state:
                 task_state.add_agent_result("main_agent", msg.content or "")
             return msg.content or "", iterations
 
-        print(f" -> wants to use {len(msg.tool_calls)} tool(s)")
+        log(
+            f" -> wants to use {len(msg.tool_calls)} tool(s)",
+            verbose=verbose,
+        )
 
         for tool_call in msg.tool_calls:
             tool_name = tool_call.function.name
@@ -107,20 +132,20 @@ def run_agent_turn(
                 args = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError as error:
                 result = f"Invalid tool arguments: {error}"
-                print(f"    ERROR {tool_name}: {result}")
+                log(f"    ERROR {tool_name}: {result}", verbose=verbose)
                 if task_state:
                     task_state.add_error(result)
                     task_state.add_tool_call(tool_name, {}, False, result, iterations)
                 append_tool_result(messages, tool_call.id, result)
                 continue
 
-            print(f"    TOOL {tool_name}({args})")
+            log(f"    TOOL {tool_name}({args})", verbose=verbose)
 
             allowed, reason = check_permissions(tool_name, args, config)
 
             if not allowed:
                 result = f"Blocked by policies: {reason}"
-                print(f"    BLOCKED {result}")
+                log(f"    BLOCKED {result}", verbose=verbose)
                 if task_state:
                     task_state.add_tool_call(tool_name, args, False, result, iterations)
                 if trace:
@@ -135,7 +160,7 @@ def run_agent_turn(
                 append_tool_result(messages, tool_call.id, result)
                 continue
 
-            needs_approval = supervision and tool_name in TOOLS_WITH_SUPERVISION
+            needs_approval = supervision and tool_name in active_tools_with_supervision
             needs_approval = needs_approval or requires_approval(tool_name, args, config)
 
             if needs_approval:
@@ -143,7 +168,7 @@ def run_agent_turn(
 
                 if not approved:
                     result = f"Action '{tool_name}' rejected by user."
-                    print("    REJECTED")
+                    log("    REJECTED", verbose=verbose)
                     if task_state:
                         task_state.add_tool_call(tool_name, args, False, result, iterations)
                     if trace:
@@ -158,18 +183,46 @@ def run_agent_turn(
                     append_tool_result(messages, tool_call.id, result)
                     continue
 
-            function = TOOL_FUNCTIONS.get(tool_name)
+            function = active_tool_functions.get(tool_name)
 
             if not function:
                 result = f"Unknown tool: {tool_name}"
+                tool_latency_seconds = 0.0
             else:
                 execution_args = normalize_tool_args(tool_name, args, config)
                 tool_started_at = time.perf_counter()
-                result = function(**execution_args)
+                try:
+                    result = function(**execution_args)
+                except Exception as error:
+                    result = f"Tool execution error in {tool_name}: {error}"
+                    if task_state:
+                        task_state.add_error(result)
+                    if trace:
+                        trace.record_error(f"tool_{tool_name}", error)
                 tool_latency_seconds = time.perf_counter() - tool_started_at
 
             if task_state:
                 task_state.add_tool_call(tool_name, args, True, str(result), iterations)
+
+            repeated, loop_message = loop_guard.record_tool_result(
+                tool_name,
+                args,
+                str(result),
+            )
+
+            if repeated:
+                result = f"{result}\n\nLoop guard: {loop_message}"
+                if task_state:
+                    task_state.add_observation(loop_message)
+                if trace:
+                    trace.record_event(
+                        "loop_guard",
+                        metadata={
+                            "tool_name": tool_name,
+                            "args": args,
+                            "message": loop_message,
+                        },
+                    )
 
             if trace:
                 trace.record_tool_call(
@@ -192,3 +245,13 @@ def append_tool_result(messages: list[dict], tool_call_id: str, content: str) ->
             "content": content,
         }
     )
+
+
+def log(
+    message: str,
+    verbose: bool,
+    end: str = "\n",
+    flush: bool = False,
+) -> None:
+    if verbose:
+        print(message, end=end, flush=flush)

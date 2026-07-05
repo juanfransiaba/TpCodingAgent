@@ -1,5 +1,10 @@
 from coding_agent.tools.command_tool import run_command
 from coding_agent.tools.file_tools import list_files, read_file, write_file
+from coding_agent.tools.memory_tools import (
+    memory_context,
+    remember_command,
+    remember_decision,
+)
 from coding_agent.tools.rag_search_tool import rag_search
 from coding_agent.tools.repo_tools import search_code, tree_files, view_file
 from coding_agent.tools.web_search_tool import web_search
@@ -182,6 +187,63 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_decision",
+            "description": "Stores an important project decision in persistent memory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "Short decision topic.",
+                    },
+                    "decision": {
+                        "type": "string",
+                        "description": "Decision to remember.",
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": "Why this decision was made.",
+                    },
+                },
+                "required": ["topic", "decision", "rationale"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_command",
+            "description": "Stores a useful project command in persistent memory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Command that is useful for this project.",
+                    },
+                    "purpose": {
+                        "type": "string",
+                        "description": "When and why to use this command.",
+                    },
+                },
+                "required": ["command", "purpose"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "memory_context",
+            "description": "Returns compact persistent memory for this project.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 TOOL_FUNCTIONS = {
@@ -194,6 +256,14 @@ TOOL_FUNCTIONS = {
     "search_code": search_code,
     "view_file": view_file,
     "rag_search": rag_search,
+    "remember_decision": remember_decision,
+    "remember_command": remember_command,
+    "memory_context": memory_context,
 }
 
-TOOLS_WITH_SUPERVISION = {"write_file", "run_command"}
+TOOLS_WITH_SUPERVISION = {
+    "write_file",
+    "run_command",
+    "remember_decision",
+    "remember_command",
+}
