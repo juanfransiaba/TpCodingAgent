@@ -20,15 +20,23 @@ class EvaluationResult:
 def evaluate_models(
     data_path: str | None = None,
     min_history_matches: int = 10,
+    max_eval_matches: int | None = None,
 ) -> list[EvaluationResult]:
     results = load_results(data_path).sort_values("date").reset_index(drop=True)
     records: dict[str, list[tuple[list[float], list[int]]]] = {
         "elo_baseline": [],
-        "poisson_v1": [],
+        "poisson_v2": [],
     }
 
+    # Optionally score only the most recent matches as a held-out test set.
+    # Every prediction still uses the full history before that match, so there
+    # is no data leakage; this only bounds the O(n^2) cost on large datasets.
+    start_index = min_history_matches
+    if max_eval_matches is not None:
+        start_index = max(min_history_matches, len(results) - max_eval_matches)
+
     for index, row in results.iterrows():
-        if index < min_history_matches:
+        if index < start_index:
             continue
 
         history = results.iloc[:index].copy()
@@ -45,7 +53,7 @@ def evaluate_models(
         poisson_prediction = predict_with_poisson(history, features)
 
         records["elo_baseline"].append((prediction_vector(elo_prediction), actual))
-        records["poisson_v1"].append((prediction_vector(poisson_prediction), actual))
+        records["poisson_v2"].append((prediction_vector(poisson_prediction), actual))
 
     return [
         build_evaluation_result(model_name, pairs)

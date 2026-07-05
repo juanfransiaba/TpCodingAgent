@@ -200,8 +200,12 @@ EMBEDDING_MODEL=text-embedding-3-small
 
 LANGFUSE_SECRET_KEY=
 LANGFUSE_PUBLIC_KEY=
-LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+> El SDK de Langfuse v3 lee **`LANGFUSE_HOST`** (no `LANGFUSE_BASE_URL`). Usar la región
+> correcta del proyecto: `https://cloud.langfuse.com` (EU) o `https://us.cloud.langfuse.com`
+> (US). No poner comillas ni espacios en los valores.
 
 No commitear `.env`.
 

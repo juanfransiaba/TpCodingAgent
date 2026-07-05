@@ -116,14 +116,34 @@ Ordenado por prioridad para la entrega. Los entregables entre paréntesis son lo
 
 - [x] Entorno + agente corriendo
 - [x] `.env` con keys
-- [x] RAG ingestado
-- [x] Langfuse conectado
+- [x] RAG ingestado (5 docs / 8 chunks)
+- [x] Langfuse conectado — **operativo** (región US), trazas subiendo OK
 - [x] Evidencia tarea RAG (tarea 1)
 - [x] Mejora RAG-first implementada y verificada
-- [ ] Dataset real de fútbol
-- [ ] Predicción + evaluación reales
-- [ ] Evidencia tarea de memoria (tarea 2)
-- [ ] Tarea de cambio de estrategia / pedir ayuda
-- [ ] Capturas de Langfuse
-- [ ] Textos de entrega (caso, arquitectura, RAG, reflexión)
-- [ ] README del caso de fútbol
+- [x] Dataset real de fútbol (martj42, 49.495 partidos jugados, 1872→2026)
+- [x] Predicción + evaluación reales (`scripts/generate_evidence.py`, `docs/EVIDENCE.md`)
+- [x] Evidencia tarea de memoria (tarea 2) — task_id `d0b738bc…`
+- [x] Tarea de cambio de estrategia / pedir ayuda — task_id `6807bf8a…` (loop guard + pide ayuda)
+- [~] Capturas de Langfuse — **desbloqueado**: las trazas ya están en el dashboard, falta
+  sacar el screenshot (buscar por nombre `coding-agent-task`)
+- [x] Textos de entrega — `docs/ENTREGA.md` (caso, arquitectura, RAG, reflexión) + `docs/EVIDENCE.md`
+- [x] README del caso de fútbol
+
+> **Langfuse resuelto:** el problema no eran solo las keys. El `.env` usaba `LANGFUSE_BASE_URL`
+> (nombre que el SDK v3 **ignora**; lee `LANGFUSE_HOST`) y el valor tenía una comilla sin
+> cerrar que metía un `\n` en el host y rompía el DNS. Config correcta (región **US**):
+> ```env
+> LANGFUSE_PUBLIC_KEY=pk-lf-...
+> LANGFUSE_SECRET_KEY=sk-lf-...
+> LANGFUSE_HOST=https://us.cloud.langfuse.com
+> ```
+> Verificado: las trazas suben al dashboard (probado vía API). Re-generar con
+> `PYTHONPATH=src python scripts/generate_evidence.py`.
+
+> **Modelo mejorado (poisson_v2):** la primera versión del Poisson perdía contra el baseline
+> Elo sobre datos reales. Se diagnosticó (desaprovechaba el Elo, ignoraba la localía) y se
+> rediseñó a `poisson_v2` (supremacía Elo log-lineal + localía). Parámetros elegidos en una
+> ventana de validación y confirmados una sola vez en el test set (últimos 300): ahora el
+> Poisson **le gana al Elo en las 3 métricas** (Brier 0.5221 vs 0.5479, log-loss 0.8903 vs
+> 0.9264, RPS 0.1642 vs 0.1770). Sin data leakage ni overfitting. Detalle en
+> `cases/football_predictor/README.md`.

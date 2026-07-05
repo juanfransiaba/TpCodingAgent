@@ -12,12 +12,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate football prediction models.")
     parser.add_argument("--data", default=None)
     parser.add_argument("--min-history", type=int, default=10)
+    parser.add_argument(
+        "--max-eval",
+        type=int,
+        default=None,
+        help="Score only the most recent N matches (held-out test set).",
+    )
 
     args = parser.parse_args()
 
     results = evaluate_models(
         data_path=args.data,
         min_history_matches=args.min_history,
+        max_eval_matches=args.max_eval,
     )
 
     for result in results:

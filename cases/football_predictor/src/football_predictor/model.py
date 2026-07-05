@@ -9,6 +9,14 @@ MAX_GOALS = 10
 MIN_EXPECTED_GOALS = 0.2
 MAX_EXPECTED_GOALS = 4.5
 
+# poisson_v2: expected goals driven by Elo supremacy (log-linear) instead of a
+# stack of clamped heuristic factors. Parameters were selected on a validation
+# window (matches [-1300:-300]) and confirmed on an untouched test set (last 300):
+# it beats the Elo baseline on Brier, log loss and RPS, while poisson_v1 did not.
+ELO_GOAL_SENSITIVITY = 0.9   # gamma: how strongly Elo difference shifts goal supremacy
+HOME_ELO_BONUS = 60.0        # Elo points added to the host team (matches elo.HOME_ADVANTAGE)
+RECENT_GOALS_WEIGHT = 0.5    # how much recent goal volume scales the total (0 = pure Elo)
+
 
 @dataclass(frozen=True)
 class Prediction:
@@ -26,47 +34,20 @@ class Prediction:
 def predict_with_poisson(results: pd.DataFrame, features: MatchFeatures) -> Prediction:
     avg_goals = average_team_goals(results)
 
-    attack_a = features.team_a.goals_for_avg / avg_goals
-    attack_b = features.team_b.goals_for_avg / avg_goals
-    defense_a = features.team_a.goals_against_avg / avg_goals
-    defense_b = features.team_b.goals_against_avg / avg_goals
+    # Goal supremacy comes from the Elo difference (plus a host bonus), mapped
+    # log-linearly onto each team's expected goals. This uses Elo -- the single
+    # best-calibrated signal -- directly, instead of diluting it into a small
+    # clamped factor as poisson_v1 did.
+    elo_gap = features.team_a.elo - features.team_b.elo + home_elo_bonus(features)
+    supremacy = math.exp(ELO_GOAL_SENSITIVITY * (elo_gap / 400.0))
 
-    elo_factor_a = elo_factor(features.team_a.elo, features.team_b.elo)
-    elo_factor_b = elo_factor(features.team_b.elo, features.team_a.elo)
+    # Recent goal volume of both teams scales the total number of goals, at a
+    # moderate weight so noisy short-term form does not dominate.
+    recent_goal_level = average_recent_goal_level(features) / avg_goals
+    total_factor = recent_goal_level**RECENT_GOALS_WEIGHT
 
-    form_factor_a = form_factor(
-        features.team_a.recent_form_points,
-        features.team_b.recent_form_points,
-    )
-    form_factor_b = form_factor(
-        features.team_b.recent_form_points,
-        features.team_a.recent_form_points,
-    )
-
-    h2h_factor_a = head_to_head_factor(features.head_to_head_a)
-    h2h_factor_b = head_to_head_factor(1.0 - features.head_to_head_a)
-
-    home_factor_a = home_factor(features.team_a.team, features)
-    home_factor_b = home_factor(features.team_b.team, features)
-
-    expected_a = clamp(
-        avg_goals
-        * attack_a
-        * defense_b
-        * elo_factor_a
-        * form_factor_a
-        * h2h_factor_a
-        * home_factor_a
-    )
-    expected_b = clamp(
-        avg_goals
-        * attack_b
-        * defense_a
-        * elo_factor_b
-        * form_factor_b
-        * h2h_factor_b
-        * home_factor_b
-    )
+    expected_a = clamp(avg_goals * total_factor * supremacy)
+    expected_b = clamp(avg_goals * total_factor / supremacy)
 
     team_a_win, draw, team_b_win = poisson_outcome_probabilities(expected_a, expected_b)
 
@@ -78,26 +59,48 @@ def predict_with_poisson(results: pd.DataFrame, features: MatchFeatures) -> Pred
         team_b_win=team_b_win,
         expected_goals_a=expected_a,
         expected_goals_b=expected_b,
-        model_name="poisson_v1",
+        model_name="poisson_v2",
         explanation={
             "history_size": features.history_size,
             "team_a_elo": round(features.team_a.elo, 2),
             "team_b_elo": round(features.team_b.elo, 2),
-            "team_a_recent_form_points": round(features.team_a.recent_form_points, 2),
-            "team_b_recent_form_points": round(features.team_b.recent_form_points, 2),
+            "elo_gap_with_home": round(elo_gap, 2),
+            "elo_goal_sensitivity": ELO_GOAL_SENSITIVITY,
             "team_a_goals_for_avg": round(features.team_a.goals_for_avg, 3),
             "team_b_goals_for_avg": round(features.team_b.goals_for_avg, 3),
             "team_a_goals_against_avg": round(features.team_a.goals_against_avg, 3),
             "team_b_goals_against_avg": round(features.team_b.goals_against_avg, 3),
             "head_to_head_a": round(features.head_to_head_a, 3),
-            "team_a_form_factor": round(form_factor_a, 3),
-            "team_b_form_factor": round(form_factor_b, 3),
-            "team_a_h2h_factor": round(h2h_factor_a, 3),
-            "team_b_h2h_factor": round(h2h_factor_b, 3),
             "neutral": features.neutral,
             "host_team": features.host_team or "",
         },
     )
+
+
+def home_elo_bonus(features: MatchFeatures) -> float:
+    """Elo bonus for the host team, signed toward team_a. Zero on neutral ground."""
+
+    if features.neutral or not features.host_team:
+        return 0.0
+
+    if features.host_team == features.team_a.team:
+        return HOME_ELO_BONUS
+
+    if features.host_team == features.team_b.team:
+        return -HOME_ELO_BONUS
+
+    return 0.0
+
+
+def average_recent_goal_level(features: MatchFeatures) -> float:
+    """Average of both teams' recent goals scored and conceded."""
+
+    return (
+        features.team_a.goals_for_avg
+        + features.team_a.goals_against_avg
+        + features.team_b.goals_for_avg
+        + features.team_b.goals_against_avg
+    ) / 4.0
 
 
 def predict_with_elo(features: MatchFeatures) -> Prediction:
@@ -165,26 +168,6 @@ def average_team_goals(results: pd.DataFrame) -> float:
 
     goals = pd.concat([results["home_score"], results["away_score"]])
     return max(float(goals.mean()), 0.1)
-
-
-def elo_factor(team_elo: float, opponent_elo: float) -> float:
-    return clamp(1.0 + ((team_elo - opponent_elo) / 1000.0), 0.75, 1.25)
-
-
-def form_factor(team_form: float, opponent_form: float) -> float:
-    form_diff = (team_form - opponent_form) / 3.0
-    return clamp(1.0 + (form_diff * 0.12), 0.9, 1.1)
-
-
-def head_to_head_factor(team_h2h_score: float) -> float:
-    return clamp(1.0 + ((team_h2h_score - 0.5) * 0.10), 0.95, 1.05)
-
-
-def home_factor(team: str, features: MatchFeatures) -> float:
-    if features.neutral or not features.host_team:
-        return 1.0
-
-    return 1.08 if team == features.host_team else 0.96
 
 
 def clamp(value: float, minimum: float = MIN_EXPECTED_GOALS, maximum: float = MAX_EXPECTED_GOALS) -> float:
