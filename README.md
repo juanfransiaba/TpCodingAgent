@@ -12,7 +12,7 @@ estado compartido y observabilidad con Langfuse.
 Ya esta implementado:
 
 - Arquitectura modular en `src/coding_agent/`.
-- Orquestador central en `core/orchestrator.py`.
+- Orquestador central en `runtime/orchestrator.py`.
 - Harness propio para el loop LLM -> tools -> resultados -> LLM.
 - Estado compartido con `TaskState`.
 - Subagentes especializados.
@@ -31,10 +31,13 @@ Ya esta implementado:
 src/coding_agent/
   agents/
   core/
+  llm/
   memory/
   observability/
   prompts/
   rag/
+  runtime/
+  security/
   tools/
   main.py
 
@@ -50,7 +53,7 @@ tests/
 ```text
 Usuario
   -> main.py
-  -> CodingAgentOrchestrator
+  -> runtime/CodingAgentOrchestrator
   -> TaskState
   -> MainAgent
   -> Explorer/Researcher
@@ -68,22 +71,46 @@ orquestador y ejecuta el chat.
 La coordinacion real vive en:
 
 ```text
-src/coding_agent/core/orchestrator.py
+src/coding_agent/runtime/orchestrator.py
 ```
 
 ## Componentes Principales
 
 ### `core/`
 
-Contiene las abstracciones y piezas centrales:
+Contiene las abstracciones y el estado compartido del agente:
 
 - `contracts.py`: contratos `Agent`, `AgentState`, `AgentResult`, `Tool`, `LLMClient`, `MemoryStore`, `Retriever`, `Orchestrator`.
-- `harness.py`: loop principal del agente con soporte para inyeccion de LLM y tools.
-- `orchestrator.py`: coordina conversacion, memoria, plan mode, supervision, trazas y ejecucion.
 - `task_state.py`: estado compartido de cada tarea.
-- `permissions.py`: validacion de permisos de archivos y comandos.
+- `config.py`: carga de configuracion YAML.
+
+El codigo operativo vive en paquetes especificos (`runtime`, `llm`, `security`)
+para evitar que `core` se convierta en una carpeta con responsabilidades
+mezcladas.
+
+### `runtime/`
+
+Contiene la ejecucion del agente:
+
+- `orchestrator.py`: coordina conversacion, memoria, plan mode, supervision, trazas y ejecucion.
+- `orchestrator_settings.py`: configuracion runtime del orquestador.
+- `harness.py`: loop principal LLM -> tools -> resultados -> LLM.
 - `loop_guard.py`: deteccion de acciones repetidas sin avance.
-- `llm_client.py`: adapter para OpenAI.
+- `io.py`: frontera de entrada/salida.
+
+### `llm/`
+
+Contiene adaptadores y helpers de modelo:
+
+- `client.py`: adapter para OpenAI.
+- `planner.py`: generacion de planes sin ejecutar tools.
+
+### `security/`
+
+Contiene la logica de seguridad:
+
+- `permissions.py`: validacion de permisos de archivos y comandos.
+- `supervision.py`: aprobacion humana para acciones riesgosas.
 
 ### `agents/`
 

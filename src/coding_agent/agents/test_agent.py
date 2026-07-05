@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coding_agent.agents.tester import suggest_commands
 from coding_agent.core.contracts import AgentContext, AgentState
 from coding_agent.core.task_state import AgentResult
 from coding_agent.prompts.tester_prompt import TESTER_PROMPT
@@ -38,3 +37,26 @@ class TestAgent:
         )
 
         return AgentResult(agent_name=self.name, summary="\n".join(summary_lines))
+
+
+def suggest_commands(workspace: Path) -> list[str]:
+    commands: list[str] = []
+
+    if (workspace / "src").exists():
+        commands.append("python -m compileall src")
+
+    if (workspace / "scripts" / "evaluate.py").exists():
+        commands.append("python scripts/evaluate.py")
+
+    if (workspace / "scripts" / "predict_match.py").exists():
+        commands.append(
+            "python scripts/predict_match.py --team-a Argentina --team-b France"
+        )
+
+    if (workspace / "pytest.ini").exists() or (workspace / "tests").exists():
+        commands.append("python -m pytest")
+
+    if (workspace / "package.json").exists():
+        commands.append("npm test")
+
+    return commands

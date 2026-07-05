@@ -20,7 +20,7 @@ El agente combina:
 ```text
 Usuario
   -> main.py
-  -> CodingAgentOrchestrator
+  -> runtime/CodingAgentOrchestrator
   -> TaskState
   -> MainAgent
   -> Explorer/Researcher
@@ -36,12 +36,15 @@ Usuario
 orquestador y ejecuta el chat. La coordinacion real vive en:
 
 ```text
-src/coding_agent/core/orchestrator.py
+src/coding_agent/runtime/orchestrator.py
 ```
 
 ## Abstracciones core
 
-Archivo:
+El paquete `core/` queda reservado para contratos, estado compartido y carga de
+configuracion.
+
+Archivo principal:
 
 ```text
 src/coding_agent/core/contracts.py
@@ -61,12 +64,47 @@ Define los contratos principales:
 Estas abstracciones permiten aplicar dependency injection sin acoplar el
 harness o los agentes a implementaciones concretas.
 
+## Mapa De Paquetes
+
+```text
+src/coding_agent/
+  core/          contratos, TaskState y config
+  runtime/       orquestador, harness, IO y loop guard
+  llm/           cliente OpenAI y planificacion
+  security/      permisos y supervision humana
+  agents/        subagentes y pipeline
+  tools/         tools concretas y registry para el LLM
+  rag/           ingesta, embeddings, vector store y retrieval
+  memory/        memoria conversacional, ejecucion y persistente
+  observability/ trazas locales y Langfuse
+  prompts/       prompts por rol
+```
+
+El codigo operativo vive en paquetes especificos (`runtime`, `llm`, `security`)
+para evitar mezclar responsabilidades dentro de `core`.
+
+## Runtime
+
+Paquete principal de ejecucion:
+
+```text
+src/coding_agent/runtime/
+```
+
+Responsabilidades:
+
+- `orchestrator.py`: coordinar la sesion interactiva.
+- `orchestrator_settings.py`: centralizar settings runtime.
+- `harness.py`: ejecutar el loop LLM -> tools -> resultados -> LLM.
+- `loop_guard.py`: detectar repeticiones sin avance.
+- `io.py`: separar consola del orquestador.
+
 ## Harness
 
 Archivo principal:
 
 ```text
-src/coding_agent/core/harness.py
+src/coding_agent/runtime/harness.py
 ```
 
 Responsabilidades:
@@ -83,7 +121,7 @@ Responsabilidades:
 El loop guard vive en:
 
 ```text
-src/coding_agent/core/loop_guard.py
+src/coding_agent/runtime/loop_guard.py
 ```
 
 Si una tool devuelve el mismo resultado con argumentos equivalentes varias veces, el agente recibe una observacion para cambiar de estrategia, replanificar o pedir ayuda.
@@ -134,9 +172,8 @@ despues ejecuta `AgentPipeline` con el flujo:
 planificar -> implementar -> testear -> revisar
 ```
 
-Los archivos `implementer.py`, `tester.py` y `reviewer.py` se conservan como
-modulos livianos/compatibles, pero la arquitectura principal usa las clases
-especializadas nuevas.
+La arquitectura usa directamente las clases especializadas nuevas, sin mantener
+modulos duplicados para los roles viejos.
 
 ## Tools
 

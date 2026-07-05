@@ -12,8 +12,8 @@ sys.path.insert(0, str(SRC_PATH))
 os.chdir(REPO_ROOT)
 
 from coding_agent.core.config import load_config
-from coding_agent.core.llm_client import MODEL, default_llm_client
 from coding_agent.core.task_state import TaskState
+from coding_agent.llm.client import MODEL, default_llm_client
 from coding_agent.memory.persistent_memory import PersistentMemoryStore
 from coding_agent.observability.tracing import TraceRecorder
 from coding_agent.prompts.system_prompt import SYSTEM_PROMPT

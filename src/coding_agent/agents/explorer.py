@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from coding_agent.core.permissions import check_permissions
 from coding_agent.core.task_state import TaskState
 from coding_agent.prompts.explorer_prompt import EXPLORER_PROMPT
+from coding_agent.security.permissions import check_permissions
 
 MAX_FILES_TO_REPORT = 40
 METADATA_FILES = (

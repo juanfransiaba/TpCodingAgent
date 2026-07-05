@@ -11,6 +11,9 @@ observability:
       input_per_1m_tokens: 0.05
       output_per_1m_tokens: 0.40
 
+orchestrator:
+  max_iterations: 8
+
 permissions:
   read:
     deny:

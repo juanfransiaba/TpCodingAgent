@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 os.chdir(REPO_ROOT)
 
 from coding_agent.core.config import load_config
-from coding_agent.core.orchestrator import CodingAgentOrchestrator
+from coding_agent.runtime.orchestrator import CodingAgentOrchestrator
 from coding_agent.memory.project_memory import ProjectMemory
 
 TAREA_MEMORIA = (

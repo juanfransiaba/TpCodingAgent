@@ -3,15 +3,15 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from coding_agent.core.llm_client import MODEL, default_llm_client
-from coding_agent.core.loop_guard import LoopGuard
-from coding_agent.core.permissions import (
+from coding_agent.core.task_state import TaskState
+from coding_agent.llm.client import MODEL, default_llm_client
+from coding_agent.runtime.loop_guard import LoopGuard
+from coding_agent.security.permissions import (
     check_permissions,
     normalize_tool_args,
     requires_approval,
 )
-from coding_agent.core.supervision import ask_permission
-from coding_agent.core.task_state import TaskState
+from coding_agent.security.supervision import ask_permission
 from coding_agent.tools.tool_registry import (
     TOOL_FUNCTIONS,
     TOOLS,
@@ -30,6 +30,7 @@ def run_agent_turn(
     tool_functions: dict[str, Callable[..., Any]] | None = None,
     tools_with_supervision: set[str] | None = None,
     verbose: bool = True,
+    max_iterations: int | None = None,
 ) -> tuple[str, int]:
     """Runs the inner loop: LLM -> tool calls -> tool results -> LLM."""
 
@@ -46,6 +47,19 @@ def run_agent_turn(
     model = getattr(active_llm_client, "model", MODEL)
 
     while True:
+        if max_iterations is not None and iterations >= max_iterations:
+            result = f"Stopped by iteration limit: max_iterations={max_iterations}"
+            log(f" -> {result}", verbose=verbose)
+
+            if task_state:
+                task_state.mark_blocked(result)
+                task_state.add_agent_result("main_agent", result, status="blocked")
+
+            if trace:
+                trace.record_error("max_iterations", result)
+
+            return result, iterations
+
         iterations += 1
         if task_state:
             task_state.set_iterations(iterations)

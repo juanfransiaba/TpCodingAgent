@@ -1,5 +1,5 @@
 from coding_agent.core.config import load_config
-from coding_agent.core.orchestrator import CodingAgentOrchestrator
+from coding_agent.runtime.orchestrator import CodingAgentOrchestrator
 
 
 def chat() -> None:

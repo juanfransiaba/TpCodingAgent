@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from coding_agent.core.contracts import MemoryStore
-from coding_agent.core.permissions import check_permissions
 from coding_agent.core.task_state import TaskState
 from coding_agent.prompts.researcher_prompt import RESEARCHER_PROMPT
+from coding_agent.security.permissions import check_permissions
 
 DOC_PATTERNS = ("README.md", "SPEC.md", "docs")
 
