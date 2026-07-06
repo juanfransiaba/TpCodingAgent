@@ -24,7 +24,6 @@ WRITE_INTENT_KEYWORDS = (
 
 
 class CoderAgent:
-    """Specialized agent that prepares implementation guidance."""
 
     name = "coder"
 

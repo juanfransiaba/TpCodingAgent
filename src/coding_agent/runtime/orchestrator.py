@@ -17,7 +17,7 @@ from coding_agent.runtime.orchestrator_settings import OrchestratorSettings
 from coding_agent.security.approval import is_approved
 
 
-class CodingAgentOrchestrator:
+class Orchestrator:
 
     def __init__(
         self,
