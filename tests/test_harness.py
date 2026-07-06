@@ -60,7 +60,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(response, "respuesta final")
         self.assertEqual(iterations, 1)
         self.assertEqual(messages[-1]["role"], "assistant")
-        self.assertEqual(task_state.agent_results[-1].agent_name, "main_agent")
+        self.assertEqual(task_state.agent_results[-1].agent_name, "llm_agent")
 
     def test_run_agent_turn_executes_injected_tool_function(self):
         messages = [{"role": "user", "content": "usa echo"}]

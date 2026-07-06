@@ -56,5 +56,8 @@ class Retriever(Protocol):
 
 
 class Orchestrator(Protocol):
-    def chat(self) -> None:
-        """Run the interactive agent entrypoint."""
+    def handle_command(self, user_input: str) -> str | None:
+        """Handle an interactive command when the input is not a task."""
+
+    def run_turn(self, user_input: str) -> None:
+        """Run one user task."""

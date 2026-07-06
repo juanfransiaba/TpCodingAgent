@@ -12,7 +12,7 @@ def prepare_task(
 ) -> str:
     """Run lightweight evidence agents and the specialized agent pipeline."""
 
-    task_state.add_progress("Main agent started subagent coordination.")
+    task_state.add_progress("Task preparer started subagent coordination.")
 
     context = AgentContext(
         config=config,
@@ -27,7 +27,7 @@ def prepare_task(
     ]
     subagent_summaries.extend(pipeline.run(task_state, context))
 
-    task_state.add_progress("Main agent finished subagent coordination.")
+    task_state.add_progress("Task preparer finished subagent coordination.")
 
     return build_coordination_brief(
         task_state,
@@ -70,7 +70,7 @@ def build_coordination_brief(
     brief_lines.extend(
         [
             "",
-            "Main agent instruction:",
+            "Execution instruction:",
             "- Use this brief as shared state, not as a substitute for tool evidence.",
             "- If repository evidence is missing, inspect files with tools before making claims.",
             "- If a command or write is risky, follow policy and approval requirements.",

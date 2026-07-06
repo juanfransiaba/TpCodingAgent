@@ -49,9 +49,7 @@ def suggest_commands(workspace: Path) -> list[str]:
         commands.append("python scripts/evaluate.py")
 
     if (workspace / "scripts" / "predict_match.py").exists():
-        commands.append(
-            "python scripts/predict_match.py --team-a Argentina --team-b France"
-        )
+        commands.append("python scripts/predict_match.py --help")
 
     if (workspace / "pytest.ini").exists() or (workspace / "tests").exists():
         commands.append("python -m pytest")

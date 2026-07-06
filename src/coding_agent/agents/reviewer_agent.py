@@ -10,7 +10,7 @@ class ReviewerAgent:
 
     name = "reviewer"
 
-    def run(self, state: AgentState, context: AgentContext) -> AgentResult:
+    def run(self, state: AgentState, _context: AgentContext) -> AgentResult:
         summary_lines = [
             "ReviewerAgent summary:",
             f"- Agent results recorded: {len(state.agent_results)}",
