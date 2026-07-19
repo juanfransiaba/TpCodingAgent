@@ -135,7 +135,7 @@ class HarnessTests(unittest.TestCase):
         task_state = TaskState(original_request="busca web")
         llm = FakeLLMClient(
             [
-                ("", [make_tool_call("web_search", {"query": "pytest"})]),
+                ("", [make_tool_call("web_search", {"query": "nestjs testing"})]),
                 ("primero necesito RAG", None),
             ]
         )
@@ -167,8 +167,8 @@ class HarnessTests(unittest.TestCase):
         task_state = TaskState(original_request="busca docs")
         llm = FakeLLMClient(
             [
-                ("", [make_tool_call("search_rag", {"query": "pytest"})]),
-                ("", [make_tool_call("web_search", {"query": "pytest"})]),
+                ("", [make_tool_call("search_rag", {"query": "nestjs testing"})]),
+                ("", [make_tool_call("web_search", {"query": "nestjs testing"})]),
                 ("respuesta con evidencia", None),
             ]
         )
@@ -180,7 +180,7 @@ class HarnessTests(unittest.TestCase):
 
         def web_search(query):
             calls.append(("web_search", query))
-            return "Results:\n  https://example.com/pytest\n"
+            return "Results:\n  https://example.com/nestjs-testing\n"
 
         response, iterations = run_agent_turn(
             messages=messages,
@@ -200,7 +200,10 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(iterations, 3)
         self.assertEqual(
             calls,
-            [("search_rag", "pytest"), ("web_search", "pytest")],
+            [
+                ("search_rag", "nestjs testing"),
+                ("web_search", "nestjs testing"),
+            ],
         )
         self.assertTrue(task_state.tool_calls[0].allowed)
         self.assertTrue(task_state.tool_calls[1].allowed)

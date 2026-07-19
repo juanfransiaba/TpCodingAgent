@@ -34,11 +34,11 @@ class TaskStateTests(unittest.TestCase):
             task_state = TaskState(original_request="buscar docs")
             task_state.add_source(
                 kind="rag",
-                title="data leakage",
-                location="rag_docs/data_leakage.md",
-                summary="usar fechas anteriores",
+                title="nestjs controllers",
+                location="rag_docs/nestjs_controllers.md",
+                summary="usar decoradores del controller",
                 agent_name="researcher",
-                query="data leakage",
+                query="nestjs controllers",
             )
             task_state.add_agent_result(
                 "researcher",
@@ -54,9 +54,9 @@ class TaskStateTests(unittest.TestCase):
 
             self.assertEqual(loaded.original_request, "buscar docs")
             self.assertEqual(loaded.status, "completed")
-            self.assertEqual(loaded.sources[0].title, "data leakage")
+            self.assertEqual(loaded.sources[0].title, "nestjs controllers")
             self.assertEqual(loaded.sources[0].agent_name, "researcher")
-            self.assertEqual(loaded.sources[0].query, "data leakage")
+            self.assertEqual(loaded.sources[0].query, "nestjs controllers")
             self.assertEqual(loaded.agent_results[0].agent_name, "researcher")
             self.assertEqual(
                 loaded.agent_results[0].evidence,

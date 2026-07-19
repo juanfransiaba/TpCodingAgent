@@ -331,7 +331,7 @@ Buscar desde Python:
 ```python
 from coding_agent.rag.retriever import rag_search
 
-print(rag_search("como evitar data leakage con pandas"))
+print(rag_search("como implementar controllers en NestJS"))
 ```
 
 ## Memoria
@@ -352,22 +352,22 @@ memory_context
 
 La idea es guardar hitos o decisiones importantes, no cada microaccion.
 
-## Observabilidad Y Prueba End-To-End
+## Observabilidad Y Evidencia
 
-Hay una prueba end-to-end en:
+Las corridas de evidencia estan en:
 
 ```text
-scripts/run_e2e_smoke.py
+scripts/generate_evidence.py
 ```
 
 Comando:
 
 ```powershell
 $env:PYTHONPATH="src"
-python scripts/run_e2e_smoke.py
+python scripts/generate_evidence.py
 ```
 
-La prueba usa:
+Las corridas usan:
 
 - memoria persistente;
 - RAG local;
@@ -386,7 +386,7 @@ memory/project_memory.json
 Langfuse dashboard
 ```
 
-Esta prueba no debe correr como test unitario porque llama APIs externas.
+Estas corridas no deben correr como test unitario porque llaman APIs externas.
 
 ## Tests
 
@@ -446,7 +446,6 @@ Mas contexto:
 
 ```text
 docs/ARCHITECTURE.md
-docs/E2E_SMOKE_TEST.md
 docs/EVIDENCE_TEMPLATE.md
 docs/NEXT_STEPS.md
 ```

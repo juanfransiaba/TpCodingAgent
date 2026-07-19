@@ -20,7 +20,7 @@ class PermissionTests(unittest.TestCase):
                 },
                 "commands": {
                     "deny": ["rm -rf"],
-                    "require_approval": ["pip install"],
+                    "require_approval": ["npm install"],
                 },
             }
 
@@ -39,7 +39,7 @@ class PermissionTests(unittest.TestCase):
                 check_permissions("read_file", {"path": str(outside_path)}, config)[0]
             )
             self.assertTrue(
-                requires_approval("run_command", {"command": "pip install pandas"}, config)
+                requires_approval("run_command", {"command": "npm install"}, config)
             )
 
 
