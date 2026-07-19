@@ -1,12 +1,20 @@
-"""Genera evidencia de dos tareas del agente para la entrega del TP.
+"""Genera evidencia de tareas del agente para la entrega del TP.
 
-Corre el agente REAL (orquestador -> subagentes -> harness -> LLM + tools) sobre:
+Caso de uso: AGREGAR UNA FUNCIONALIDAD a un proyecto existente. El repo objetivo
+es un repositorio propio y separado (copia standalone de ChoppedApp, NestJS +
+React), fuera del TP; su ruta esta en `workspace` de agent.config.yaml.
 
-  Tarea A (memoria):    el agente recupera decisiones/comandos desde la memoria
-                        persistente del proyecto.
-  Tarea B (estrategia): el agente enfrenta un pedido sin evidencia disponible
-                        (archivo inexistente) y debe detectarlo, cambiar de
-                        estrategia o pedir ayuda en vez de inventar un fix.
+Corre el agente REAL (orquestador -> router/subagentes -> harness -> LLM + tools):
+
+  Tarea A (RAG + feature): el agente agrega un endpoint GET /store/items/:id al
+                           backend NestJS, apoyandose en el RAG del ecosistema
+                           (controllers, providers, excepciones) y mostrando las
+                           fuentes recuperadas.
+  Tarea B (memoria):       el agente recupera desde la memoria persistente la
+                           convencion de endpoints y el comando de tests.
+  Tarea C (estrategia):    el agente enfrenta un pedido sin evidencia (archivo
+                           inexistente) y debe detectarlo, cambiar de estrategia
+                           o pedir ayuda en vez de inventar un fix.
 
 Cada turno guarda:
   - runs/task_states/<task_id>.json
@@ -31,39 +39,49 @@ from coding_agent.core.config import load_config
 from coding_agent.runtime.orchestrator import CodingAgentOrchestrator
 from coding_agent.memory.project_memory import ProjectMemory
 
+TAREA_RAG_FEATURE = (
+    "Agrega al backend NestJS un endpoint GET /store/items/:id que devuelva un "
+    "unico item del catalogo por su id, y que responda 404 si el id no existe. "
+    "Consulta primero el RAG del proyecto para seguir las convenciones de NestJS "
+    "(controller, service y excepciones) y agrega un test unitario del service. "
+    "Mostra que fuentes del RAG usaste."
+)
+
 TAREA_MEMORIA = (
-    "Usando la memoria persistente del proyecto (llama a la tool memory_context), "
-    "decime de donde sacamos el dataset de futbol y con que comando evaluamos los "
-    "modelos. Aclara explicitamente que esa informacion viene de la memoria del proyecto."
+    "Usando la memoria persistente del proyecto, decime que convencion seguimos "
+    "para buscar un recurso por id que no existe y con que comando corremos los "
+    "tests del backend. Aclara explicitamente que esa informacion viene de la "
+    "memoria del proyecto."
 )
 
 TAREA_ESTRATEGIA = (
     "Arregla el bug del modulo de pagos en "
-    "cases/football_predictor/src/football_predictor/payments.py que hace fallar "
-    "las transacciones con tarjeta."
+    "backend/src/payments/payments.service.ts que hace fallar los cobros con tarjeta."
 )
 
 
 def seed_memory(storage_path: str) -> None:
-    """Pre-carga una decision y un comando para que la Tarea A tenga que recordarlos."""
+    """Pre-carga una decision y un comando para que la Tarea B tenga que recordarlos."""
 
     memory = ProjectMemory(storage_path)
     memory.remember_decision(
-        topic="dataset_futbol",
+        topic="convencion_endpoints",
         decision=(
-            "Usar el dataset martj42 'International football results 1872-2026' como "
-            "cases/football_predictor/data/results.csv."
+            "Para buscar un recurso por id, el service hace el lookup y lanza "
+            "NotFoundException si no existe; el controller solo delega. Los mensajes "
+            "de error van en espanol."
         ),
         rationale=(
-            "Es la fuente citada en el SPEC, trae exactamente las columnas que espera "
-            "data.py y permite calcular Elo, forma, goles y head-to-head sin scraping."
+            "Es el patron idiomatico de NestJS (StoreService.buy ya lanza "
+            "NotFoundException('Item no encontrado')) y mantiene el status 404 "
+            "consistente en todo el backend."
         ),
     )
     memory.remember_command(
-        command="python cases/football_predictor/scripts/evaluate.py --max-eval 300",
+        command="cd backend && npm test  # desde la raiz del repo objetivo",
         purpose=(
-            "Comparar Poisson vs baseline Elo sobre los ultimos 300 partidos jugados "
-            "sin recomputar todo el historico en cada corrida."
+            "Corre los tests Jest (*.spec.ts) del backend NestJS para validar una "
+            "feature nueva."
         ),
     )
 
@@ -85,23 +103,28 @@ def main() -> None:
     orchestrator = CodingAgentOrchestrator(config)
 
     print("=" * 70)
-    print("TAREA A - MEMORIA PERSISTENTE")
+    print("TAREA A - RAG + AGREGAR FEATURE (GET /store/items/:id)")
+    print("=" * 70)
+    orchestrator.run_turn(TAREA_RAG_FEATURE)
+
+    print("\n" + "=" * 70)
+    print("TAREA B - MEMORIA PERSISTENTE")
     print("=" * 70)
     orchestrator.run_turn(TAREA_MEMORIA)
 
     print("\n" + "=" * 70)
-    print("TAREA B - CAMBIO DE ESTRATEGIA / PEDIR AYUDA (sin evidencia)")
+    print("TAREA C - CAMBIO DE ESTRATEGIA / PEDIR AYUDA (sin evidencia)")
     print("=" * 70)
     orchestrator.run_turn(TAREA_ESTRATEGIA)
 
     print("\n" + "=" * 70)
     print("EVIDENCIA GENERADA")
     print("=" * 70)
-    for task_id in newest_task_ids(2):
+    for task_id in newest_task_ids(3):
         print(f"- task_id: {task_id}")
         print(f"    runs/task_states/{task_id}.json")
         print(f"    runs/traces/{task_id}.json")
-    print("Buscá estos task_id en el dashboard de Langfuse para las capturas.")
+    print("Busca estos task_id en el dashboard de Langfuse para las capturas.")
 
 
 if __name__ == "__main__":

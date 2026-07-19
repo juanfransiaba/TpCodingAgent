@@ -1,131 +1,51 @@
 # Next Steps
 
-Este documento resume lo que falta despues de las ultimas mejoras del agente.
+Este documento resume lo que falta para cerrar la entrega.
 
 ## Estado Actual
 
 Ya esta funcionando:
 
-- agente modular con orquestador, subagentes y harness propio;
-- RAG local con ingesta y retrieval;
+- agente modular con orquestador, router de subagentes y harness propio;
+- subagentes con tools propias por rol (ver `agents/specs.py`);
+- RAG local (NestJS/TypeScript) con ingesta y retrieval;
+- politica RAG-first aplicada por runtime;
 - memoria persistente;
-- tools de repo, comandos, archivos, web, RAG y memoria;
 - observabilidad local y Langfuse;
-- prueba end-to-end en `scripts/run_e2e_smoke.py`;
-- tests unitarios basicos;
-- regla RAG-first en el system prompt.
+- tests unitarios;
+- caso de uso sobre un repo propio y externo `choppedapp_copia` (copia de ChoppedApp).
 
 ## Prioridad Alta
 
-### 1. Dataset real del caso
+### 1. Correr las 3 tareas de evidencia
 
-Hoy solo existe:
-
-```text
-cases/football_predictor/data/results_sample.csv
+```bash
+export PYTHONPATH=src
+python scripts/generate_evidence.py
 ```
 
-Para la entrega hace falta agregar:
+Genera las corridas de las tareas A (RAG + feature), B (memoria) y C (cambio de
+estrategia), con estado en `runs/task_states/` y trazas en `runs/traces/` + Langfuse.
 
-```text
-cases/football_predictor/data/results.csv
-```
+### 2. Capturas de Langfuse
 
-Debe tener estas columnas:
+Capturar al menos una traza completa (nombre `coding-agent-task`) donde se vea:
+prompt, modelo, tool calls, RAG docs recuperados, memoria, iteraciones, latencia,
+tokens/costo y resultado final. Completar los `task_id` reales en `docs/EVIDENCE.md`.
 
-```text
-date
-home_team
-away_team
-home_score
-away_score
-tournament
-city
-country
-neutral
-```
+### 3. Validar la feature en el repo objetivo
 
-### 2. Prediccion y evaluacion reales
+Si la Tarea A implementó `GET /store/items/:id`, correr los tests del backend:
 
-Cuando este el dataset:
-
-```powershell
-$env:PYTHONPATH="cases/football_predictor/src"
-python cases/football_predictor/scripts/predict_match.py --team-a Argentina --team-b France --data cases/football_predictor/data/results.csv
-```
-
-```powershell
-$env:PYTHONPATH="cases/football_predictor/src"
-python cases/football_predictor/scripts/evaluate.py --data cases/football_predictor/data/results.csv
-```
-
-Guardar la salida para la entrega.
-
-### 3. Evidencia de Langfuse
-
-Capturar al menos una traza completa donde se vea:
-
-- prompt;
-- modelo;
-- tool calls;
-- RAG docs recuperados;
-- web search;
-- memoria;
-- latencia;
-- tokens/costo si estan disponibles;
-- resultado final.
-
-La prueba end-to-end ya ayuda con esto:
-
-```powershell
-$env:PYTHONPATH="src"
-python scripts/run_e2e_smoke.py
-```
-
-### 4. Segunda tarea de evidencia
-
-Ya hay evidencia de una tarea con RAG. Falta una segunda tarea que demuestre
-memoria persistente o cambio de estrategia.
-
-Prompt sugerido para memoria:
-
-```text
-Segun la memoria del proyecto, que regla o decision importante se registro sobre data leakage?
-```
-
-Prompt sugerido para cambio de estrategia:
-
-```text
-Intenta ejecutar la evaluacion del predictor. Si falla por falta del dataset real, explica que evidencia falta y propone una alternativa segura.
+```bash
+cd backend   # dentro del repo objetivo choppedapp_copia
+npm install   # una vez
+npm test
 ```
 
 ## Prioridad Media
 
-### 5. Redaccion final
-
-Escribir la narrativa de entrega:
-
-- caso de uso;
-- criterio de tarea cumplida;
-- arquitectura;
-- RAG;
-- memoria;
-- observabilidad;
-- reflexion final.
-
-Material ya disponible:
-
-```text
-README.md
-ESTADO_Y_PENDIENTES.md
-docs/ARCHITECTURE.md
-docs/E2E_SMOKE_TEST.md
-cases/football_predictor/README.md
-```
-
-### 6. Tests adicionales
-
-Opcionalmente sumar tests para:
+### 4. Tests adicionales del agente
 
 - `CodingAgentOrchestrator`;
 - manejo de errores en observabilidad;
@@ -133,6 +53,6 @@ Opcionalmente sumar tests para:
 
 ## Prioridad Baja
 
-- Agregar mas documentos a `rag_docs/`.
-- Mejorar autodescubrimiento de tools estilo plugin.
+- Ampliar el RAG de NestJS (guards/JWT, DTOs con `class-validator`, TypeORM avanzado).
+- Mejorar autodescubrimiento de tools estilo plugin (extra opcional de la consigna).
 - Refinar costos estimados si se cambia de modelo.

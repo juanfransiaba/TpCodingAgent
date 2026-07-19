@@ -25,7 +25,7 @@ Ya esta implementado:
 - Observabilidad local y exportacion a Langfuse.
 - Prueba end-to-end reproducible.
 - Tests unitarios basicos.
-- Caso de uso inicial en `cases/football_predictor/`.
+- Caso de uso sobre un repo propio y externo `choppedapp_copia` (agregar una funcionalidad a un proyecto real).
 
 ## Estructura General
 
@@ -43,11 +43,14 @@ src/coding_agent/
   tools/
   main.py
 
-cases/football_predictor/
 rag_docs/
 docs/
 scripts/
 tests/
+
+# repo objetivo del caso (externo, no versionado dentro del TP):
+#   ~/facultad/projects/copiaDeChoppedApp/choppedapp_copia/
+#   GitHub: https://github.com/ThiagoSere/choppedapp_copia
 ```
 
 ## Flujo Del Agente
@@ -275,10 +278,10 @@ Define:
 - comandos prohibidos;
 - comandos que requieren aprobacion.
 
-Actualmente el workspace configurado es:
+Actualmente el workspace configurado apunta al repo objetivo externo:
 
 ```text
-./cases/football_predictor
+/Users/thiagoserebrinsky/facultad/projects/copiaDeChoppedApp/choppedapp_copia
 ```
 
 ## Ejecutar El Agente
@@ -405,30 +408,37 @@ Actualmente cubren:
 Compilacion completa:
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall src cases\football_predictor tests scripts
+.\.venv\Scripts\python.exe -m compileall src tests scripts
 ```
 
 ## Caso De Uso
 
-El caso de uso inicial vive en:
+El caso de uso opera sobre un **repositorio propio y separado**: `choppedapp_copia`,
+una copia standalone de ChoppedApp (backend NestJS + TypeScript + TypeORM, frontend
+React) con su propio git/GitHub. **No vive dentro de este repo del TP** y **no es el
+ChoppedApp original**: el agente lo modifica como repo externo, via el `workspace`
+de `agent.config.yaml`.
+
+El caso (tipo de la consigna: *agregar una funcionalidad a un proyecto existente*)
+consiste en que el agente agregue una feature concreta al backend NestJS siguiendo
+las convenciones del repo, apoyandose en el RAG.
+
+Objetivo, feature de referencia (`GET /store/items/:id`), criterio de cumplido y la
+ruta/URL del repo objetivo en:
 
 ```text
-cases/football_predictor/
+docs/CASO_DE_USO.md
 ```
 
-La idea del caso es predecir resultados de partidos entre selecciones con
-probabilidades, usando features como Elo, ranking FIFA, forma reciente,
-goles, head-to-head y localia.
+Comandos utiles del repo objetivo (ajustar la ruta si lo clonas en otro lado):
 
-Comandos utiles:
-
-```powershell
-python cases/football_predictor/scripts/predict_match.py --team-a Argentina --team-b France
-python cases/football_predictor/scripts/evaluate.py
+```bash
+cd /Users/thiagoserebrinsky/facultad/projects/copiaDeChoppedApp/choppedapp_copia/backend && npm install
+cd /Users/thiagoserebrinsky/facultad/projects/copiaDeChoppedApp/choppedapp_copia/backend && npm test
 ```
 
-El agente debe mantenerse general. El conocimiento especifico de futbol debe
-vivir en `cases/football_predictor/` y `rag_docs/`, no hardcodeado en el core.
+El agente debe mantenerse general. El conocimiento especifico del caso vive en el
+repo objetivo `choppedapp_copia` y en `rag_docs/`, no hardcodeado en el core.
 
 ## Documentacion Interna
 
@@ -460,15 +470,13 @@ Estos archivos son locales, generados o contienen informacion sensible.
 
 Prioridad alta:
 
-- Capturar y guardar evidencia final de una o dos corridas en Langfuse.
-- Completar el caso de uso `football_predictor` con datasets reales y evaluacion clara.
-- Documentar en la entrega que el agente general no tiene logica de futbol hardcodeada.
+- Correr `scripts/generate_evidence.py` y capturar las 3 trazas en Langfuse.
+- Completar los `task_id` reales en `docs/EVIDENCE.md` tras esa corrida.
 
 Prioridad media:
 
 - Agregar mas tests sobre `orchestrator.py`.
-- Agregar una prueba controlada donde el agente interactivo use `rag_search`, `web_search` y memoria.
-- Mejorar el README del caso de uso especifico dentro de `cases/football_predictor/`.
+- Ampliar la cobertura del RAG de NestJS (guards/JWT, DTOs, TypeORM avanzado).
 
 Prioridad baja:
 

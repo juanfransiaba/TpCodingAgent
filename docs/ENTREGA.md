@@ -5,9 +5,9 @@ apunta a dónde está la evidencia en el repo.
 
 | Entregable | Dónde |
 | --- | --- |
-| 1. Código funcionando | `src/coding_agent/` + `cases/football_predictor/` |
+| 1. Código funcionando | `src/coding_agent/` + repo objetivo externo `choppedapp_copia` |
 | 2. README instalación/config/ejecución | [`README.md`](../README.md) |
-| 3. Caso de uso (objetivo + criterio) | §3 de este doc + [`cases/football_predictor/README.md`](../cases/football_predictor/README.md) |
+| 3. Caso de uso (objetivo + criterio) | §3 de este doc + [`docs/CASO_DE_USO.md`](CASO_DE_USO.md) |
 | 4. Arquitectura (agente + subagentes + estado) | §4 de este doc + [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) |
 | 5. Documentación de la base RAG | §5 de este doc |
 | 6. Evidencia de ≥2 tareas ejecutadas | [`docs/EVIDENCE.md`](EVIDENCE.md) |
@@ -18,34 +18,32 @@ apunta a dónde está la evidencia en el repo.
 
 ## 3. Caso de uso
 
-**Proyecto:** `cases/football_predictor/` — un pipeline en Python/pandas que predice un
-partido entre dos selecciones.
+**Tipo de caso (de la consigna):** *agregar una funcionalidad a un proyecto existente*.
 
-**Objetivo concreto:** dado un cruce (ej. Argentina vs Francia), producir una predicción
-**probabilística** reproducible (gana A / empate / gana B) y **evaluarla** con métricas de
-calibración sobre datos históricos, sin data leakage.
+**Proyecto objetivo:** `choppedapp_copia` — una **copia standalone** de un proyecto real
+(ChoppedApp: backend NestJS + TypeScript + TypeORM, frontend React), en su **propio repo de
+git/GitHub, externo al TP**. No es el ChoppedApp original ni vive dentro de este repo; el
+agente lo modifica vía el `workspace` de `agent.config.yaml`.
 
-**Por qué sirve para el agente:** es un repo real que el agente puede explorar, correr,
-evaluar, mejorar y explicar. Las tareas de prueba (memoria, RAG, cambio de estrategia) se
-ejecutan sobre este workspace.
+**Objetivo concreto:** que el agente agregue una funcionalidad concreta al backend
+NestJS respetando las convenciones del proyecto. Feature de referencia:
+**`GET /store/items/:id`** — devolver un ítem del catálogo por id, con **404** si no
+existe, más su **test unitario** del service.
+
+**Por qué sirve para el agente:** es un repo real y no trivial (9 módulos NestJS) que el
+agente debe explorar, entender y modificar siguiendo convenciones que descubre por RAG.
+Las tareas de prueba (RAG+feature, memoria, cambio de estrategia) se ejecutan sobre este
+workspace.
 
 **Criterio de "cumplido" (verificable):**
 
-1. El pipeline corre de punta a punta sobre el **dataset real** (martj42, 49.495 partidos
-   jugados 1872→2026) sin data leakage — cada feature usa solo el historial previo al partido.
-2. El modelo principal (Poisson) **supera al baseline (Elo)** en las métricas de calibración.
+1. Existe `getItem(id)` en `store.service.ts` (devuelve el ítem o lanza
+   `NotFoundException`) y la ruta `@Get('items/:id')` en `store.controller.ts`.
+2. Hay `store.service.spec.ts` con caso feliz + caso 404 y `npm test` (desde `backend/`) pasa.
+3. El agente muestra las **fuentes del RAG** que usó para respetar las convenciones.
 
-**Resultado (test set = últimos 300 partidos, menor es mejor):**
-
-| Métrica | Elo baseline | Poisson v2 |
-| --- | --- | --- |
-| Brier | 0.5479 | **0.5221** |
-| Log loss | 0.9264 | **0.8903** |
-| RPS | 0.1770 | **0.1642** |
-
-Criterio cumplido. El detalle del modelo (v1 perdía, se diagnosticó y rediseñó a v2 con
-supremacía Elo log-lineal + localía, eligiendo parámetros en validación y confirmando en un
-test set no tocado) está en [`cases/football_predictor/README.md`](../cases/football_predictor/README.md).
+Definición completa en [`docs/CASO_DE_USO.md`](CASO_DE_USO.md); evidencia de las corridas
+en [`docs/EVIDENCE.md`](EVIDENCE.md).
 
 ---
 
@@ -86,10 +84,11 @@ Usuario → main.py → CodingAgentOrchestrator → TaskState (estado compartido
 RAG mínimo, sin frameworks externos. Pipeline: `chunker → embeddings → vector_store → retriever`,
 expuesto como la tool `rag_search`.
 
-- **Fuentes** (`rag_docs/`, 5 documentos técnicos del ecosistema del caso):
-  `pandas.md`, `pytest.md`, `data_leakage.md`, `elo.md`, `poisson.md`.
+- **Fuentes** (`rag_docs/`, 5 documentos técnicos del ecosistema NestJS/TypeScript):
+  `nestjs_controllers.md`, `nestjs_providers_di.md`, `nestjs_exceptions_validation.md`,
+  `nestjs_testing_jest.md`, `typeorm_repositories.md`.
 - **Chunking** (`rag/chunker.py`): por caracteres con solapamiento, `chunk_size=800`,
-  `overlap=150`. Los 5 docs generan **8 chunks**.
+  `overlap=150`. Los 5 docs generan **15 chunks**.
 - **Embeddings** (`rag/embeddings.py`): API de OpenAI, modelo `text-embedding-3-small`.
 - **Almacenamiento** (`rag/vector_store.py`): índice JSON local en
   `storage/vector_store/index.json` (source, chunk_id, texto, embedding).
@@ -135,39 +134,39 @@ resultados, tokens, latencia y costo). Los `task_id` de cada corrida están en [
   de correr; da una red de seguridad real (paths y comandos denegados, aprobaciones).
 - **Observabilidad que no depende de terceros.** Las trazas locales se generan siempre, aun
   cuando Langfuse falló; eso permitió depurar sin el dashboard.
-- **Mejora medible del caso.** El modelo pasó de perder contra el baseline a superarlo, con
-  una metodología honesta (validación separada del test).
+- **RAG específico del ecosistema.** Al apuntar el RAG a docs de NestJS/TypeScript, el agente
+  respeta convenciones del repo objetivo (lanzar `NotFoundException` en vez de devolver
+  `null`) que no infiere solo del código.
+- **Router de subagentes + tools por rol.** No se ejecuta un pipeline fijo: el router elige
+  los subagentes según la tarea y cada uno tiene su set de tools; el Tester se saltea si el
+  Implementer no escribió nada.
 
 ### Qué falló / aristas ásperas
 
-- **El Poisson v1 perdía contra el Elo simple** sobre datos reales: estaba sobre-parametrizado
-  (apilaba factores clampeados) y desaprovechaba el Elo. Se diagnosticó y rediseñó (v2).
 - **Config de Langfuse frágil.** El `.env` usaba `LANGFUSE_BASE_URL` (el SDK v3 lee
   `LANGFUSE_HOST`) y tenía una comilla sin cerrar que metía un `\n` en el host y rompía el
   DNS. El error visible (`timeout`/`401`) no señalaba la causa real.
 - **Manejo de excepciones del trace.** En una corrida la tarea de estrategia terminó `blocked`
   con `"generator didn't stop after throw()"`: una excepción dentro de `trace.trace_task()`
   no se maneja limpio.
-- **Loop guard sin corte duro + costo O(n²).** El loop guard avisa pero no frena; una corrida
-  llegó a 32 iteraciones. Y `evaluate` recomputaba el Elo por partido (O(n²)), inviable en
-  49k partidos hasta agregar `--max-eval`.
+- **Loop guard sin corte duro.** El loop guard avisa pero no frena; el corte real lo hace el
+  tope `max_iterations`, y una corrida llegó a escribir la feature pero se quedó sin
+  iteraciones antes del test unitario.
 
 ### Cuándo se detectaron loops o falta de evidencia
 
-- **Loop:** en la tarea "arreglá el módulo de pagos", el agente repitió `list_files` sobre una
-  ruta inexistente; el **loop guard lo detectó** ("repeated action... change strategy or ask
-  for help") y el agente dejó de repetir.
-- **Falta de evidencia:** el módulo `payments.py` no existe; el agente lo **reconoció y pidió
-  ayuda** en lugar de inventar un fix ("no tengo suficientes evidencias... ¿me confirmás la
-  ruta o el error?").
+- **Loop:** en la tarea "arreglá `payments.service.ts`", el agente repite `list_files` sobre una
+  ruta inexistente; el **loop guard lo detecta** ("repeated action... change strategy or ask
+  for help") y el agente deja de repetir.
+- **Falta de evidencia:** el módulo `payments` no existe en el backend; el agente lo
+  **reconoce y pide ayuda** en lugar de inventar un fix, y el Tester se saltea (no hubo
+  `write_file`).
 
 ### Qué mejoraríamos
 
 1. **Tope duro de iteraciones por turno** (no solo el nudge del loop guard) y manejo de
    excepciones limpio en `trace_task` (arreglar el `generator didn't stop`).
-2. **Evaluación incremental O(n)** (un solo forward pass computando Elo/stats) para poder
-   evaluar miles de partidos en segundos.
-3. **Modelo:** correlación de goles (Dixon-Coles) y ranking FIFA / valor de plantel como
-   features adicionales.
-4. **Contexto:** resumen de historial con LLM, y subagentes con ruteo y tools propias.
+2. **Correr los tests del repo objetivo desde el agente** y realimentar el resultado al ciclo.
+3. **Más cobertura del RAG** de NestJS (guards/JWT, DTOs con `class-validator`, TypeORM avanzado).
+4. **Contexto:** resumen de historial con LLM para tareas y repos grandes.
 5. **Extra opcional:** sistema de plugins de tools con autodescubrimiento.

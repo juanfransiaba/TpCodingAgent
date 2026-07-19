@@ -1,12 +1,16 @@
 # Evidencias de corridas (TP Coding Agent Avanzado)
 
-Corridas reales ejecutadas sobre el caso `football_predictor`. Todas generan traza local
+Caso de uso: **agregar una funcionalidad** al backend NestJS de `choppedapp_copia`
+(repo propio externo, copia de ChoppedApp). Todas las corridas generan traza local
 en `runs/traces/<task_id>.json` y estado en `runs/task_states/<task_id>.json`.
 
-> **Langfuse:** operativo. Las trazas suben al proyecto (región **US**,
-> `https://us.cloud.langfuse.com`) además de guardarse localmente. Buscar en el dashboard por
-> nombre `coding-agent-task` (el `task_id` va en el metadata de cada traza). Reproducir con
-> `PYTHONPATH=src python scripts/generate_evidence.py`.
+> **Cómo reproducir todo:** `PYTHONPATH=src python scripts/generate_evidence.py`
+> (corre las 3 tareas de abajo y deja los `task_id` en `runs/`). Después completar
+> los `task_id` reales en las secciones que dicen `<task_id: ...>`.
+
+> **Langfuse:** las trazas suben al proyecto (región **US**,
+> `https://us.cloud.langfuse.com`) además de guardarse localmente. Buscar en el
+> dashboard por nombre `coding-agent-task` (el `task_id` va en el metadata).
 >
 > Config correcta en `.env` (el SDK v3 lee `LANGFUSE_HOST`, **no** `LANGFUSE_BASE_URL`):
 > ```env
@@ -17,112 +21,92 @@ en `runs/traces/<task_id>.json` y estado en `runs/task_states/<task_id>.json`.
 
 ---
 
-## Corrida 1 — Consulta con RAG mostrando fuentes (Tarea 1)
+## Corrida 1 — RAG + agregar la feature (Tarea A)
 
-### Prompt / llamada
-```text
-rag_search("como evitar data leakage al calcular features temporales con pandas", top_k=3)
-```
-
-### Capacidades observadas
-- **RAG:** recupera chunks del índice local `storage/vector_store/index.json` (5 docs / 8 chunks).
-- **Fuentes:** se muestran con su score de similitud coseno.
-
-### Fuentes recuperadas
-| Fuente | Chunk | Score |
-| --- | --- | --- |
-| `rag_docs/data_leakage.md` | 0 | 0.50 |
-| `rag_docs/pandas.md` | 0 | 0.47 |
-
-### Qué se observa
-El agente prioriza el RAG local (regla "rag_search primero, web como fallback" en el
-`SYSTEM_PROMPT`) y expone la evidencia con su fuente, no una respuesta a ciegas.
-
----
-
-## Corrida 2 — Uso de memoria persistente (Tarea 2)
-
-- **task_id:** `d0b738bc31224c77967824c2d596000d` (traza `coding-agent-task` en Langfuse)
-- **Iteraciones:** 2 · **Tools:** `memory_context` (1)
+- **task_id:** `<task_id: completar tras correr>`
 
 ### Prompt usado
 ```text
-Usando la memoria persistente del proyecto (llama a la tool memory_context), decime de
-donde sacamos el dataset de futbol y con que comando evaluamos los modelos. Aclara
-explicitamente que esa informacion viene de la memoria del proyecto.
+Agrega al backend NestJS un endpoint GET /store/items/:id que devuelva un unico
+item del catalogo por su id, y que responda 404 si el id no existe. Consulta primero
+el RAG del proyecto para seguir las convenciones de NestJS (controller, service y
+excepciones) y agrega un test unitario del service. Mostra que fuentes del RAG usaste.
 ```
 
-### Output relevante
-```text
-A partir de la memoria persistente del proyecto [...] Esta información proviene
-explícitamente de la memoria del proyecto.
-- Fuente del dataset: dataset_futbol -> martj42 'International football results 1872-2026'
-  como cases/football_predictor/data/results.csv
-- Comando para evaluar: python cases/football_predictor/scripts/evaluate.py --max-eval 300
-```
+### Capacidades observadas
+- **RAG (Researcher, RAG-first):** recupera chunks del índice local
+  `storage/vector_store/index.json` (5 docs / 15 chunks del ecosistema NestJS/TS).
+- **Fuentes esperadas** (por relevancia): `rag_docs/nestjs_controllers.md`,
+  `rag_docs/nestjs_exceptions_validation.md`, `rag_docs/nestjs_providers_di.md`,
+  `rag_docs/nestjs_testing_jest.md`.
+- **Implementer:** crea `getItem(id)` en `store.service.ts`, la ruta
+  `@Get('items/:id')` en `store.controller.ts` y un `store.service.spec.ts`.
+- **Tester:** corre `npm test` (solo si el Implementer hizo un `write_file` exitoso).
+- **Reviewer:** decide `approved` / `changes_requested` / `blocked`.
 
 ### Qué se observa
-El agente lee la memoria semántica (decisión `dataset_futbol`) y procedural (comando de
-evaluación) via `memory_context` y las cita, distinguiendo que provienen de la memoria y
-no de inferencia propia.
+El Researcher prioriza el RAG local (política RAG-first aplicada por runtime: `web_search`
+se bloquea hasta que el subagente intentó `search_rag`), cita las fuentes, y recién
+entonces el Implementer escribe siguiendo la convención del repo (lanzar
+`NotFoundException`, no devolver `null`).
 
 ---
 
-## Corrida 3 — Loop detectado + cambio de estrategia / pedir ayuda
+## Corrida 2 — Uso de memoria persistente (Tarea B)
 
-- **task_id:** `6807bf8a0d3546f18693708234c6eb6d` (traza `coding-agent-task` en Langfuse)
-- **Iteraciones:** 12 · el **loop guard se disparó** durante la corrida:
-  > "Repeated action detected: list_files returned the same result 3 times with equivalent
-  > arguments. Change strategy, use a different source of evidence, replan, or ask the user
-  > for help."
+- **task_id:** `<task_id: completar tras correr>`
+
+### Prompt usado
+```text
+Usando la memoria persistente del proyecto, decime que convencion seguimos para
+buscar un recurso por id que no existe y con que comando corremos los tests del
+backend. Aclara explicitamente que esa informacion viene de la memoria del proyecto.
+```
+
+### Output esperado (de la memoria sembrada por `generate_evidence.py`)
+```text
+Esta información proviene de la memoria persistente del proyecto:
+- Convención (semantic memory · convencion_endpoints): el service hace el lookup y
+  lanza NotFoundException si no existe; el controller solo delega. Mensajes en español.
+- Comando de tests (procedural memory): cd backend && npm test
+```
+
+### Qué se observa
+El agente lee la memoria semántica (decisión `convencion_endpoints`) y procedural
+(comando de tests) y las cita, distinguiendo que provienen de la memoria del proyecto
+y no de inferencia propia.
+
+---
+
+## Corrida 3 — Cambio de estrategia / pedir ayuda (Tarea C)
+
+- **task_id:** `<task_id: completar tras correr>`
 
 ### Prompt usado
 ```text
 Arregla el bug del modulo de pagos en
-cases/football_predictor/src/football_predictor/payments.py que hace fallar las
-transacciones con tarjeta.
+backend/src/payments/payments.service.ts que hace fallar los cobros con tarjeta.
 ```
 
-### Output relevante
+### Output esperado
 ```text
-No puedo localizar el archivo cases/football_predictor/src/football_predictor/payments.py
-en el estado actual de mi entorno. He intentado listar/recorrer esa ruta varias veces y no
-aparece el archivo [...] Tampoco tengo suficientes evidencias [...]
+No puedo localizar backend/src/payments/payments.service.ts: el módulo payments no
+existe en el backend (los módulos reales son users, auth, workouts, store, ...). No
+tengo evidencia suficiente para aplicar un fix. ¿Me confirmás la ruta real?
 ```
 
 ### Qué se observa
-El pedido no tiene evidencia real en el repo (el módulo no existe). El agente explora, repite
-`list_files` sobre la misma ruta y el **loop guard lo detecta** ("repeated action... change
-strategy or ask the user for help"). El agente entonces **deja de repetir**, **no inventa un
-fix** y **pide ayuda** reconociendo la falta de evidencia — las dos conductas pedidas por la
-consigna (detección de loop + detenerse / pedir ayuda) en una sola corrida.
-
-> Nota: el comportamiento es no-determinista. En otra corrida el mismo prompt terminó
-> `blocked` con `"generator didn't stop after throw()"` (arista áspera del manejo de
-> excepciones dentro de `trace.trace_task()` en el orquestador) — candidato a mejora.
+El pedido no tiene evidencia real (el módulo `payments` no existe; el cobro real vive
+en `store.service.ts` con puntos, no con tarjeta). El Implementer no escribe sin
+evidencia, el Tester se saltea (no hubo `write_file`) y queda registrada la observación;
+el agente **pide ayuda** en lugar de inventar un fix.
 
 ---
 
-## Corrida 4 — Resultado verificable del caso de uso
+## Nota sobre determinismo
 
-### Predicción (dataset real, jul 2026)
-```text
-Argentina vs France        (neutral)
-Argentina win: 47.7% | Draw: 22.8% | France win: 29.5%
-Model: poisson_v2 | xG: Argentina 1.82 - 1.39 France
-Elo: Argentina 2075.6 vs France 2015.72 | history_size: 49495
-```
-
-### Evaluación (últimos 300 partidos como test set)
-```text
-elo_baseline  -> brier 0.5479 | log_loss 0.9264 | rps 0.1770
-poisson_v2    -> brier 0.5221 | log_loss 0.8903 | rps 0.1642   (gana en las 3)
-```
-
-### Qué se observa
-Pipeline completo sin data leakage (features solo con historial previo a cada partido).
-La primera versión (`poisson_v1`) perdía contra el baseline Elo; tras diagnosticar que
-desaprovechaba el Elo e ignoraba la localía, se rediseñó (`poisson_v2`: supremacía Elo
-log-lineal + localía), eligiendo parámetros sobre una ventana de validación y reportando
-una sola vez sobre el test set no tocado. El modelo principal ahora **supera al baseline en
-Brier, log loss y RPS**. Detalle en `cases/football_predictor/README.md`.
+El comportamiento del LLM es no-determinista: los `task_id`, el número de iteraciones
+y el texto exacto varían entre corridas. Lo que se mantiene es la **capacidad
+observada** en cada tarea (RAG con fuentes, memoria citada, falta de evidencia →
+pedir ayuda). Para las capturas del entregable 7, abrir en Langfuse cualquiera de las
+3 trazas `coding-agent-task` generadas.

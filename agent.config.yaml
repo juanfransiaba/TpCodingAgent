@@ -1,4 +1,7 @@
-workspace: ./cases/football_predictor
+# Repo objetivo del caso de uso: repositorio propio y separado (no vive dentro
+# del TP). Es una copia standalone de ChoppedApp con su propio git/GitHub.
+# Ajustar esta ruta si clonas el repo objetivo en otra ubicacion.
+workspace: /Users/thiagoserebrinsky/facultad/projects/copiaDeChoppedApp/choppedapp_copia
 
 memory:
   path: ./memory/project_memory.json
@@ -18,14 +21,17 @@ permissions:
   read:
     deny:
       - ".env"
+      - "**/.env"
       - "**/*.pem"
       - "secrets/**"
 
   write:
     deny:
       - ".github/**"
-      - "data/raw/**"
-      - "requirements.txt"
+      - "**/node_modules/**"
+      - "**/dist/**"
+      - "**/*package-lock.json"
+      - "**/.env"
 
 commands:
   deny:
@@ -36,6 +42,7 @@ commands:
     - "format"
 
   require_approval:
+    - "npm install"
+    - "npm ci"
     - "pip install"
     - "git commit"
-    - "python scripts/evaluate.py"

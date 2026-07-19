@@ -334,10 +334,16 @@ Registra:
 
 ## Caso de uso
 
-El caso inicial esta en:
+El repo objetivo es `choppedapp_copia`, un **repo propio y externo** (copia
+standalone de ChoppedApp: NestJS + React), con su propio git/GitHub. No vive dentro
+del TP; el agente lo modifica via el `workspace` de `agent.config.yaml`:
 
 ```text
-cases/football_predictor/
+workspace: /Users/thiagoserebrinsky/facultad/projects/copiaDeChoppedApp/choppedapp_copia
 ```
 
-El agente es general. El conocimiento especifico del caso vive en `cases/` y `rag_docs/`, no hardcodeado en el core.
+El objetivo del agente es **agregar una funcionalidad concreta** al backend NestJS.
+Definicion, objetivo y criterio de cumplido en `docs/CASO_DE_USO.md`.
+
+El agente es general. El conocimiento especifico del caso vive en el repo objetivo y
+en `rag_docs/`, no hardcodeado en el core.
