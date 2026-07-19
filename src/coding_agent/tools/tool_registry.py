@@ -9,6 +9,18 @@ from coding_agent.tools.rag_search_tool import rag_search
 from coding_agent.tools.repo_tools import search_code, tree_files, view_file
 from coding_agent.tools.web_search_tool import web_search
 
+
+def search_rag(query: str, top_k: int = 3) -> str:
+    """Alias with the role-table name for local RAG search."""
+
+    return rag_search(query=query, top_k=top_k)
+
+
+def read_project_memory(storage_path: str = "memory/project_memory.json") -> str:
+    """Alias with the role-table name for compact project memory."""
+
+    return memory_context(storage_path=storage_path)
+
 TOOLS = [
     {
         "type": "function",
@@ -190,6 +202,27 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_rag",
+            "description": "Searches local RAG documentation and returns relevant chunks with sources.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The RAG query.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of chunks to return.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "remember_decision",
             "description": "Stores an important project decision in persistent memory.",
             "parameters": {
@@ -244,6 +277,17 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_project_memory",
+            "description": "Returns compact persistent memory for this project.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 TOOL_FUNCTIONS = {
@@ -256,9 +300,11 @@ TOOL_FUNCTIONS = {
     "search_code": search_code,
     "view_file": view_file,
     "rag_search": rag_search,
+    "search_rag": search_rag,
     "remember_decision": remember_decision,
     "remember_command": remember_command,
     "memory_context": memory_context,
+    "read_project_memory": read_project_memory,
 }
 
 TOOLS_WITH_SUPERVISION = {
@@ -267,3 +313,35 @@ TOOLS_WITH_SUPERVISION = {
     "remember_decision",
     "remember_command",
 }
+
+
+def tools_for(tool_names: tuple[str, ...] | list[str] | set[str]) -> list[dict]:
+    """Return tool schemas in registry order for a restricted agent scope."""
+
+    allowed = set(tool_names)
+    return [
+        tool
+        for tool in TOOLS
+        if tool["function"]["name"] in allowed
+    ]
+
+
+def tool_functions_for(
+    tool_names: tuple[str, ...] | list[str] | set[str],
+) -> dict:
+    """Return callable implementations for a restricted agent scope."""
+
+    allowed = set(tool_names)
+    return {
+        name: function
+        for name, function in TOOL_FUNCTIONS.items()
+        if name in allowed
+    }
+
+
+def supervised_tools_for(
+    tool_names: tuple[str, ...] | list[str] | set[str],
+) -> set[str]:
+    """Return supervised tool names that are also allowed in this scope."""
+
+    return set(tool_names) & TOOLS_WITH_SUPERVISION

@@ -7,17 +7,13 @@ from typing import Any
 from coding_agent.core.task_state import TaskState
 from coding_agent.llm.client import MODEL, default_llm_client
 from coding_agent.runtime.loop_guard import LoopGuard
+from coding_agent.security.evidence_policy import check_rag_before_web
 from coding_agent.security.permissions import (
     check_permissions,
     normalize_tool_args,
     requires_approval,
 )
 from coding_agent.security.supervision import ask_permission
-from coding_agent.tools.tool_registry import (
-    TOOL_FUNCTIONS,
-    TOOLS,
-    TOOLS_WITH_SUPERVISION,
-)
 
 
 @dataclass
@@ -30,6 +26,8 @@ class Harness:
     tool_functions: dict[str, Callable[..., Any]]
     tools_with_supervision: set[str]
     verbose: bool
+    agent_name: str
+    record_agent_result: bool
 
 
 def run_agent_turn(
@@ -44,18 +42,18 @@ def run_agent_turn(
     tools_with_supervision: set[str] | None = None,
     verbose: bool = True,
     max_iterations: int | None = None,
+    agent_name: str = "llm_agent",
+    record_agent_result: bool = True,
 ) -> tuple[str, int]:
     """Runs the inner loop: LLM -> tool calls -> tool results -> LLM."""
 
     iterations = 0
     loop_guard = LoopGuard()
     active_llm_client = llm_client or default_llm_client
-    active_tools = TOOLS if tools is None else tools
-    active_tool_functions = TOOL_FUNCTIONS if tool_functions is None else tool_functions
+    active_tools = [] if tools is None else tools
+    active_tool_functions = {} if tool_functions is None else tool_functions
     active_tools_with_supervision = (
-        TOOLS_WITH_SUPERVISION
-        if tools_with_supervision is None
-        else tools_with_supervision
+        set() if tools_with_supervision is None else tools_with_supervision
     )
     harness = Harness(
         config=config,
@@ -66,6 +64,8 @@ def run_agent_turn(
         tool_functions=active_tool_functions,
         tools_with_supervision=active_tools_with_supervision,
         verbose=verbose,
+        agent_name=agent_name,
+        record_agent_result=record_agent_result,
     )
     model = getattr(active_llm_client, "model", MODEL)
 
@@ -95,8 +95,8 @@ def run_agent_turn(
 
         if not msg.tool_calls:
             log(" -> final response", verbose=harness.verbose)
-            if harness.task_state:
-                harness.task_state.add_agent_result("llm_agent", msg.content or "")
+            if harness.task_state and harness.record_agent_result:
+                harness.task_state.add_agent_result(harness.agent_name, msg.content or "")
             return msg.content or "", iterations
 
         log(
@@ -120,7 +120,14 @@ def stop_if_iteration_limit_reached(
 
     if harness.task_state:
         harness.task_state.mark_blocked(result)
-        harness.task_state.add_agent_result("llm_agent", result, status="blocked")
+        if harness.record_agent_result:
+            harness.task_state.add_agent_result(
+                harness.agent_name,
+                result,
+                status="blocked",
+                blockers=[result],
+                recommendation="blocked",
+            )
 
     if harness.trace:
         harness.trace.record_error("max_iterations", result)
@@ -152,11 +159,13 @@ def call_llm(
     started_at = time.perf_counter()
 
     try:
-        response = llm_client.chat(
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-        )
+        chat_kwargs = {"messages": messages}
+
+        if tools:
+            chat_kwargs["tools"] = tools
+            chat_kwargs["tool_choice"] = "auto"
+
+        response = llm_client.chat(**chat_kwargs)
     except Exception as error:
         latency_seconds = time.perf_counter() - started_at
         if harness.trace:
@@ -243,7 +252,14 @@ def handle_tool_call(
     result, latency_seconds = execute_tool_function(tool_name, args, function, harness)
 
     if harness.task_state:
-        harness.task_state.add_tool_call(tool_name, args, True, str(result), iterations)
+        harness.task_state.add_tool_call(
+            tool_name,
+            args,
+            True,
+            str(result),
+            iterations,
+            agent_name=harness.agent_name,
+        )
 
     result = apply_loop_guard(tool_name, args, str(result), harness)
     record_trace_tool_call(
@@ -253,6 +269,7 @@ def handle_tool_call(
         result=str(result),
         iteration=iterations,
         latency_seconds=latency_seconds,
+        agent_name=harness.agent_name,
         harness=harness,
     )
     append_tool_result(messages, tool_call.id, str(result))
@@ -274,7 +291,14 @@ def parse_tool_arguments(
 
         if harness.task_state:
             harness.task_state.add_error(result)
-            harness.task_state.add_tool_call(tool_name, {}, False, result, iterations)
+            harness.task_state.add_tool_call(
+                tool_name,
+                {},
+                False,
+                result,
+                iterations,
+                agent_name=harness.agent_name,
+            )
 
         append_tool_result(messages, tool_call.id, result)
         return None
@@ -291,13 +315,27 @@ def record_policy_result(
     allowed, reason = check_permissions(tool_name, args, harness.config)
 
     if allowed:
+        allowed, reason = check_rag_before_web(
+            tool_name=tool_name,
+            task_state=harness.task_state,
+            agent_name=harness.agent_name,
+        )
+
+    if allowed:
         return True
 
     result = f"Blocked by policies: {reason}"
     log(f"    BLOCKED {result}", verbose=harness.verbose)
 
     if harness.task_state:
-        harness.task_state.add_tool_call(tool_name, args, False, result, iterations)
+        harness.task_state.add_tool_call(
+            tool_name,
+            args,
+            False,
+            result,
+            iterations,
+            agent_name=harness.agent_name,
+        )
 
     record_trace_tool_call(
         tool_name=tool_name,
@@ -306,6 +344,7 @@ def record_policy_result(
         result=result,
         iteration=iterations,
         latency_seconds=0.0,
+        agent_name=harness.agent_name,
         harness=harness,
     )
     append_tool_result(messages, tool_call.id, result)
@@ -336,7 +375,14 @@ def record_approval_result(
     log("    REJECTED", verbose=harness.verbose)
 
     if harness.task_state:
-        harness.task_state.add_tool_call(tool_name, args, False, result, iterations)
+        harness.task_state.add_tool_call(
+            tool_name,
+            args,
+            False,
+            result,
+            iterations,
+            agent_name=harness.agent_name,
+        )
 
     record_trace_tool_call(
         tool_name=tool_name,
@@ -345,6 +391,7 @@ def record_approval_result(
         result=result,
         iteration=iterations,
         latency_seconds=0.0,
+        agent_name=harness.agent_name,
         harness=harness,
     )
     append_tool_result(messages, tool_call.id, result)
@@ -413,6 +460,7 @@ def record_trace_tool_call(
     result: str,
     iteration: int,
     latency_seconds: float,
+    agent_name: str,
     harness: Harness,
 ) -> None:
     if not harness.trace:
@@ -425,6 +473,7 @@ def record_trace_tool_call(
         result=result,
         iteration=iteration,
         latency_seconds=latency_seconds,
+        agent_name=agent_name,
     )
 
 

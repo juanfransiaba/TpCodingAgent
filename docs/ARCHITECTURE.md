@@ -8,7 +8,7 @@ El agente combina:
 
 - harness propio,
 - tools locales,
-- subagentes especializados,
+- subagentes especializados con ruteo y tools propias,
 - estado compartido,
 - memoria persistente,
 - RAG,
@@ -22,13 +22,11 @@ Usuario
   -> main.py
   -> runtime/CodingAgentOrchestrator
   -> TaskState
-  -> MainAgent
-  -> Explorer/Researcher
-  -> AgentPipeline
-  -> PlannerAgent -> CoderAgent -> TestAgent -> ReviewerAgent
+  -> SubagentRouter
+  -> subagentes seleccionados segun la tarea
   -> Brief compartido
-  -> Harness
-  -> LLM + tools
+  -> Harness por subagente con tools restringidas
+  -> respuesta final
   -> TaskState + ProjectMemory + TraceRecorder
 ```
 
@@ -52,17 +50,12 @@ src/coding_agent/core/contracts.py
 
 Define los contratos principales:
 
-- `Agent`
+- `AgentContext`
 - `AgentState`
-- `AgentResult`
-- `Tool`
-- `LLMClient`
 - `MemoryStore`
-- `Retriever`
-- `Orchestrator`
 
-Estas abstracciones permiten aplicar dependency injection sin acoplar el
-harness o los agentes a implementaciones concretas.
+Estas abstracciones permiten compartir contexto, estado y memoria sin acoplar
+el harness o los subagentes a implementaciones concretas.
 
 ## Mapa De Paquetes
 
@@ -72,7 +65,7 @@ src/coding_agent/
   runtime/       orquestador, harness, IO y loop guard
   llm/           cliente OpenAI y planificacion
   security/      permisos y supervision humana
-  agents/        subagentes y pipeline
+  agents/        specs de subagentes, router y pipeline
   tools/         tools concretas y registry para el LLM
   rag/           ingesta, embeddings, vector store y retrieval
   memory/        memoria conversacional, ejecucion y persistente
@@ -140,10 +133,10 @@ src/coding_agent/core/task_state.py
 - estado de la tarea,
 - progreso,
 - resultados de subagentes,
-- fuentes,
+- fuentes, con subagente y query cuando vienen de RAG/web,
 - archivos modificados,
 - observaciones,
-- tool calls,
+- tool calls, con subagente responsable,
 - errores,
 - iteraciones,
 - respuesta final.
@@ -158,22 +151,53 @@ src/coding_agent/agents/
 
 Roles:
 
-- `Explorer`: entiende estructura, archivos relevantes y metadata del repo.
-- `Researcher`: registra fuentes locales, memoria y contexto RAG/web cuando aplique.
-- `PlannerAgent`: interpreta la tarea y propone el flujo de trabajo.
-- `CoderAgent`: define el enfoque de implementacion.
-- `TestAgent`: propone comandos de validacion.
-- `ReviewerAgent`: revisa riesgos, errores, evidencia y cumplimiento del pedido.
+- `SubagentSpec`: define responsabilidad, prompt, tools permitidas y limite de
+  iteraciones por subagente.
+- `SubagentRouter`: devuelve un `RoutePlan` con subagentes seleccionados,
+  subagentes salteados y el motivo de cada decision.
+- `SubagentRunResult`: normaliza la respuesta de cada subagente como `status`,
+  `summary`, `evidence`, `files_changed`, `blockers` y `recommendation`.
+- `Explorer`: entiende estructura, arquitectura, dependencias, convenciones y archivos relevantes.
+- `Researcher`: investiga informacion tecnica con RAG primero, memoria del proyecto y web solo como fallback.
+- `Implementer`: aplica cambios concretos y acotados desde la evidencia disponible. Si falta evidencia o el pedido es ambiguo, no escribe.
+- `Tester`: valida cambios con comandos reales como tests, build o lint, y se detiene si repite acciones sin avanzar.
+- `Reviewer`: revisa el diff real contra el pedido original y devuelve una
+  decision formal: `approved`, `changes_requested` o `blocked`, sin permiso de
+  escritura.
 
-El `MainAgent` coordina `Explorer` y `Researcher` como agentes de evidencia, y
-despues ejecuta `AgentPipeline` con el flujo:
+El `AgentPipeline` conserva el nombre historico para compatibilidad, pero ya no
+ejecuta un flujo fijo. Ahora coordina un ruteo por tarea. Por ejemplo, una tarea
+de investigacion puede usar solo `Researcher`, mientras que una tarea de cambio
+de codigo puede usar `Explorer -> Researcher -> Implementer -> Tester -> Reviewer`
+si el router detecta que esas capacidades son necesarias.
+
+El ruteo tambien corta pasos que ya no tienen sentido. En una tarea de
+implementacion, si `Implementer` no produjo ningun `write_file` exitoso,
+`Tester` no se ejecuta; el motivo queda registrado en `TaskState.observations`.
+`Researcher` tampoco corre siempre: solo cuando la tarea pide investigacion,
+arquitectura, RAG/web/memoria o falta evidencia tecnica.
+
+Si `Reviewer` devuelve `changes_requested`, el orquestador conserva ese estado
+en lugar de marcar la tarea como `completed`, y antepone una advertencia a la
+respuesta final. Si devuelve `blocked`, la tarea queda bloqueada.
+
+Cada subagente recibe un scope propio de tools:
 
 ```text
-planificar -> implementar -> testear -> revisar
+Explorer:    list_files, read_file, search_rag, read_project_memory
+Researcher:  search_rag, web_search, read_project_memory
+Implementer: read_file, write_file, list_files
+Tester:      run_command, read_file
+Reviewer:    read_file, run_command
 ```
 
-La arquitectura usa directamente las clases especializadas nuevas, sin mantener
-modulos duplicados para los roles viejos.
+El harness ejecuta tools, permisos, supervision y loop guard, pero no decide el
+set de tools. El set lo define el subagente seleccionado.
+
+Antes de ejecutar `web_search`, el harness tambien aplica la politica
+RAG-first de `security/evidence_policy.py`: el mismo subagente debe haber
+registrado antes una llamada permitida a `search_rag` o `rag_search`. Si no,
+la llamada web se bloquea y queda auditada en `TaskState.tool_calls`.
 
 ## Tools
 
@@ -197,24 +221,13 @@ Tools agregadas:
 - `search_code`
 - `view_file`
 - `rag_search`
+- `search_rag`
 - `remember_decision`
 - `remember_command`
 - `memory_context`
+- `read_project_memory`
 
 Las tools pasan por validacion de permisos antes de ejecutarse.
-
-Ademas hay wrappers tipo Command para que la arquitectura tenga herramientas
-con una interfaz comun:
-
-- `FileTool`
-- `TerminalTool`
-- `GitTool`
-- `TestRunnerTool`
-- `CodeSearchTool`
-
-Estos wrappers no reemplazan al registry de OpenAI; lo complementan. El LLM
-sigue usando `tool_registry.py`, mientras que el sistema puede inyectar tools
-concretas cuando necesite una interfaz de objetos.
 
 ## Politicas
 
@@ -232,6 +245,8 @@ Define:
 - rutas bloqueadas para lectura/escritura,
 - comandos prohibidos,
 - comandos que requieren aprobacion.
+- politica dinamica RAG-first para impedir `web_search` sin intento previo de
+  RAG.
 
 ## Memoria persistente
 

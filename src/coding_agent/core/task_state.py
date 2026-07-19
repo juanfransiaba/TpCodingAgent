@@ -17,6 +17,8 @@ class SourceRecord:
     title: str
     location: str
     summary: str = ""
+    agent_name: str = ""
+    query: str = ""
 
 
 @dataclass
@@ -27,6 +29,7 @@ class ToolCallRecord:
     result_preview: str
     iteration: int
     timestamp: str = field(default_factory=utc_now_iso)
+    agent_name: str = ""
 
 
 @dataclass
@@ -34,6 +37,10 @@ class AgentResult:
     agent_name: str
     summary: str
     status: str = "completed"
+    evidence: list[str] = field(default_factory=list)
+    files_changed: list[str] = field(default_factory=list)
+    blockers: list[str] = field(default_factory=list)
+    recommendation: str = "continue"
     timestamp: str = field(default_factory=utc_now_iso)
 
 
@@ -68,12 +75,20 @@ class TaskState:
         agent_name: str,
         summary: str,
         status: str = "completed",
+        evidence: list[str] | None = None,
+        files_changed: list[str] | None = None,
+        blockers: list[str] | None = None,
+        recommendation: str = "continue",
     ) -> None:
         self.agent_results.append(
             AgentResult(
                 agent_name=agent_name,
                 summary=summary,
                 status=status,
+                evidence=evidence or [],
+                files_changed=files_changed or [],
+                blockers=blockers or [],
+                recommendation=recommendation,
             )
         )
         self.touch()
@@ -84,13 +99,26 @@ class TaskState:
         title: str,
         location: str,
         summary: str = "",
+        agent_name: str = "",
+        query: str = "",
     ) -> None:
+        for source in self.sources:
+            if (
+                source.kind == kind
+                and source.location == location
+                and source.agent_name == agent_name
+                and source.query == query
+            ):
+                return
+
         self.sources.append(
             SourceRecord(
                 kind=kind,
                 title=title,
                 location=location,
                 summary=summary,
+                agent_name=agent_name,
+                query=query,
             )
         )
         self.touch()
@@ -115,6 +143,7 @@ class TaskState:
         allowed: bool,
         result: str,
         iteration: int,
+        agent_name: str = "",
     ) -> None:
         self.tool_calls.append(
             ToolCallRecord(
@@ -123,13 +152,54 @@ class TaskState:
                 allowed=allowed,
                 result_preview=result[:500],
                 iteration=iteration,
+                agent_name=agent_name,
             )
         )
 
         if tool_name == "write_file" and allowed and "path" in args:
             self.add_file_modified(str(args["path"]))
 
+        if allowed:
+            self.record_sources_from_tool_call(
+                tool_name=tool_name,
+                args=args,
+                result=result,
+                agent_name=agent_name,
+            )
+
         self.touch()
+
+    def record_sources_from_tool_call(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        result: str,
+        agent_name: str = "",
+    ) -> None:
+        query = str(args.get("query", ""))
+
+        if tool_name in ("rag_search", "search_rag"):
+            for location in extract_rag_sources(result):
+                self.add_source(
+                    kind="rag",
+                    title=query or location,
+                    location=location,
+                    summary=result[:250],
+                    agent_name=agent_name,
+                    query=query,
+                )
+            return
+
+        if tool_name == "web_search":
+            for location in extract_web_sources(result):
+                self.add_source(
+                    kind="web",
+                    title=query or location,
+                    location=location,
+                    summary=result[:250],
+                    agent_name=agent_name,
+                    query=query,
+                )
 
     def set_iterations(self, iterations: int) -> None:
         self.iterations = iterations
@@ -143,6 +213,11 @@ class TaskState:
     def mark_blocked(self, reason: str) -> None:
         self.status = "blocked"
         self.add_error(reason)
+        self.touch()
+
+    def mark_changes_requested(self, reason: str) -> None:
+        self.status = "changes_requested"
+        self.add_observation(reason)
         self.touch()
 
     def to_dict(self) -> dict[str, Any]:
@@ -179,3 +254,19 @@ class TaskState:
 
         with Path(path).open("r", encoding="utf-8") as file:
             return cls.from_dict(json.load(file))
+
+
+def extract_rag_sources(result: str) -> list[str]:
+    return [
+        line.removeprefix("Fuente:").strip()
+        for line in result.splitlines()
+        if line.startswith("Fuente:")
+    ]
+
+
+def extract_web_sources(result: str) -> list[str]:
+    return [
+        line.strip()
+        for line in result.splitlines()
+        if line.strip().startswith("http")
+    ]

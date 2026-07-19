@@ -148,6 +148,86 @@ class OrchestratorTests(unittest.TestCase):
             self.assertEqual(memory.recorded[0].final_response, "final answer")
             self.assertEqual(len(saved_states), 1)
 
+    def test_plan_mode_executes_after_approval(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            task_states_path = Path(temp_dir) / "task_states"
+            memory = FakeMemory(Path(temp_dir) / "memory.json")
+            settings = OrchestratorSettings(
+                memory_path=str(memory.storage_path),
+                task_states_path=str(task_states_path),
+            )
+            executed = []
+
+            def fake_prepare_task(task_state, config, memory=None):
+                return "coordination brief"
+
+            def fake_plan(messages, task):
+                return "approved plan"
+
+            def fake_run_agent_turn(**kwargs):
+                executed.append(kwargs["messages"][-1]["content"])
+                return "final answer", 1
+
+            orchestrator = CodingAgentOrchestrator(
+                config={},
+                memory=memory,
+                settings=settings,
+                prepare_task_fn=fake_prepare_task,
+                run_agent_turn_fn=fake_run_agent_turn,
+                plan_fn=fake_plan,
+                trace_factory=FakeTrace,
+                io=FakeIO(["sí"]),
+            )
+            orchestrator.plan_mode = True
+
+            orchestrator.run_turn("hacer algo")
+
+            self.assertEqual(executed, ["hacer algo"])
+            self.assertEqual(orchestrator.total_iterations, 1)
+            self.assertEqual(memory.recorded[0].final_response, "final answer")
+
+    def test_reviewer_changes_requested_is_not_marked_completed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            task_states_path = Path(temp_dir) / "task_states"
+            memory = FakeMemory(Path(temp_dir) / "memory.json")
+            settings = OrchestratorSettings(
+                memory_path=str(memory.storage_path),
+                task_states_path=str(task_states_path),
+            )
+
+            def fake_prepare_task(task_state, config, memory=None):
+                task_state.add_agent_result(
+                    "reviewer",
+                    "missing focused tests",
+                    blockers=["missing focused tests"],
+                    recommendation="changes_requested",
+                )
+                task_state.mark_changes_requested(
+                    "reviewer decision: changes_requested. missing focused tests"
+                )
+                return "coordination brief"
+
+            def fake_run_agent_turn(**kwargs):
+                return "final answer", 1
+
+            orchestrator = CodingAgentOrchestrator(
+                config={},
+                memory=memory,
+                settings=settings,
+                prepare_task_fn=fake_prepare_task,
+                run_agent_turn_fn=fake_run_agent_turn,
+                trace_factory=FakeTrace,
+                io=FakeIO(),
+            )
+
+            orchestrator.run_turn("revisar")
+
+            self.assertEqual(memory.recorded[0].status, "changes_requested")
+            self.assertIn(
+                "Reviewer decision: changes_requested",
+                memory.recorded[0].final_response,
+            )
+
     def test_run_turn_can_reraise_errors_after_recording(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             task_states_path = Path(temp_dir) / "task_states"

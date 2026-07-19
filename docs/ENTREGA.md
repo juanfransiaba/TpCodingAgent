@@ -55,20 +55,27 @@ Detalle completo en [`docs/ARCHITECTURE.md`](ARCHITECTURE.md). En una frase:
 
 ```
 Usuario → main.py → CodingAgentOrchestrator → TaskState (estado compartido)
-        → MainAgent coordina Explorer/Researcher → Brief compartido
-        → Harness (loop LLM ↔ tools, con permisos + loop guard)
+        -> SubagentRouter -> subagentes seleccionados segun la tarea
+        -> Brief compartido
+        -> Harness por subagente (tools restringidas + permisos + loop guard)
         → TaskState + ProjectMemory + TraceRecorder
 ```
 
 - **Agente principal (`CodingAgentOrchestrator`):** recibe la tarea, mantiene el estado,
   coordina subagentes, arma el brief y ejecuta el harness.
-- **Subagentes:** `Explorer` (estructura/archivos del repo), `Researcher` (fuentes locales,
-  memoria, RAG/web), y el pipeline `Planner → Coder → Test → Reviewer`. Cada uno tiene una
-  responsabilidad acotada y aporta evidencia/criterio al brief; no todos necesitan las
-  mismas tools.
-- **Estado compartido (`TaskState`):** pedido, progreso, resultados de subagentes, fuentes,
-  tool calls, archivos modificados, observaciones, errores, iteraciones y respuesta final.
+- **Subagentes:** `Explorer`, `Researcher`, `Implementer`, `Tester` y `Reviewer`.
+  El router elige solo los necesarios y registra el motivo de seleccion o skip.
+  Cada uno recibe un set propio de tools.
+  Ya no se ejecuta un pipeline fijo para todos los pedidos; si `Implementer`
+  no escribe cambios, `Tester` se saltea y el motivo queda en observaciones.
+- **Estado compartido (`TaskState`):** pedido, progreso, resultados de subagentes, fuentes
+  y tool calls etiquetadas por subagente, archivos modificados, observaciones, errores,
+  iteraciones y respuesta final.
   Se serializa a `runs/task_states/<id>.json`.
+- **Resultado de subagente:** `status`, `summary`, `evidence`, `files_changed`,
+  `blockers` y `recommendation`.
+- **Reviewer:** devuelve `approved`, `changes_requested` o `blocked`; si pide cambios,
+  el orquestador no marca la tarea como completada.
 - **Harness:** llama al LLM, valida permisos **antes** de cada tool call, pide aprobación
   cuando corresponde, ejecuta tools y detecta repeticiones sin avance (`loop_guard.py`).
 
@@ -89,8 +96,9 @@ expuesto como la tool `rag_search`.
 - **Recuperación** (`rag/retriever.py`): similitud **coseno**, `top_k=3` por defecto. La tool
   devuelve cada resultado con `Fuente`, `Chunk`, `Score` y `Contenido`, para que las
   afirmaciones sean verificables y se distinga la fuente (RAG vs repo vs memoria vs web).
-- **Política:** el `SYSTEM_PROMPT` obliga a consultar `rag_search` primero y usar `web_search`
-  solo como fallback. Ingesta: `PYTHONPATH=src python -m coding_agent.rag.ingest`.
+- **Política:** el harness aplica RAG-first en runtime: `web_search` se bloquea
+  hasta que el subagente haya intentado `search_rag`/`rag_search`. Ingesta:
+  `PYTHONPATH=src python -m coding_agent.rag.ingest`.
 
 ---
 
@@ -161,6 +169,5 @@ resultados, tokens, latencia y costo). Los `task_id` de cada corrida están en [
    evaluar miles de partidos en segundos.
 3. **Modelo:** correlación de goles (Dixon-Coles) y ranking FIFA / valor de plantel como
    features adicionales.
-4. **Contexto:** resumen de historial con LLM, y subagentes con tools propias (hoy aportan
-   criterio, no ejecución autónoma).
+4. **Contexto:** resumen de historial con LLM, y subagentes con ruteo y tools propias.
 5. **Extra opcional:** sistema de plugins de tools con autodescubrimiento.

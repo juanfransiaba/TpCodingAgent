@@ -15,10 +15,12 @@ Ya esta implementado:
 - Orquestador central en `runtime/orchestrator.py`.
 - Harness propio para el loop LLM -> tools -> resultados -> LLM.
 - Estado compartido con `TaskState`.
-- Subagentes especializados.
+- Subagentes especializados con ruteo por tarea y tools propias por rol.
 - Tools registradas para el LLM.
-- Tools estilo Command para arquitectura limpia.
+- Registry de tools con scopes por subagente.
 - RAG minimo sobre documentacion local.
+- Politica RAG-first aplicada por runtime: `web_search` se bloquea hasta que
+  el subagente haya intentado `search_rag`.
 - Memoria persistente por proyecto.
 - Observabilidad local y exportacion a Langfuse.
 - Prueba end-to-end reproducible.
@@ -55,13 +57,11 @@ Usuario
   -> main.py
   -> runtime/CodingAgentOrchestrator
   -> TaskState
-  -> MainAgent
-  -> Explorer/Researcher
-  -> AgentPipeline
-  -> PlannerAgent -> CoderAgent -> TestAgent -> ReviewerAgent
+  -> SubagentRouter
+  -> subagentes seleccionados segun la tarea
   -> Brief compartido
-  -> Harness
-  -> LLM + tools
+  -> Harness por subagente con tools restringidas
+  -> respuesta final
   -> TaskState + ProjectMemory + TraceRecorder
 ```
 
@@ -80,8 +80,9 @@ src/coding_agent/runtime/orchestrator.py
 
 Contiene las abstracciones y el estado compartido del agente:
 
-- `contracts.py`: contratos `Agent`, `AgentState`, `AgentResult`, `Tool`, `LLMClient`, `MemoryStore`, `Retriever`, `Orchestrator`.
-- `task_state.py`: estado compartido de cada tarea.
+- `contracts.py`: contratos vivos `AgentContext`, `AgentState` y `MemoryStore`.
+- `task_state.py`: estado compartido de cada tarea, con evidencia etiquetada
+  por subagente cuando viene de tools.
 - `config.py`: carga de configuracion YAML.
 
 El codigo operativo vive en paquetes especificos (`runtime`, `llm`, `security`)
@@ -116,13 +117,39 @@ Contiene la logica de seguridad:
 
 Contiene agentes especializados:
 
-- `Explorer`: inspecciona estructura y metadata del repo.
-- `Researcher`: junta fuentes locales y memoria.
-- `PlannerAgent`: interpreta la tarea y arma flujo de trabajo.
-- `CoderAgent`: define enfoque de implementacion.
-- `TestAgent`: propone validaciones.
-- `ReviewerAgent`: revisa riesgos, evidencia y calidad.
-- `AgentPipeline`: ejecuta planificar -> implementar -> testear -> revisar.
+- `specs.py`: define responsabilidad, prompt y tools permitidas por subagente.
+- `router.py`: selecciona solo los subagentes utiles para el pedido y explica
+  por que selecciono o salteo cada rol.
+- `results.py`: normaliza la salida de cada subagente como resultado estructurado.
+- `Explorer`: entiende estructura, arquitectura, dependencias y archivos relevantes.
+- `Researcher`: consulta RAG primero, memoria del proyecto y web solo si falta evidencia.
+- `Implementer`: aplica cambios concretos y acotados. Si falta evidencia o el pedido es ambiguo, no escribe.
+- `Tester`: valida con comandos reales y se detiene si repite acciones sin avanzar.
+- `Reviewer`: revisa el diff real contra el pedido original y decide
+  `approved`, `changes_requested` o `blocked`, sin permiso de escritura.
+- `AgentPipeline`: mantiene el nombre historico, pero ahora coordina ruteo y ejecucion de subagentes seleccionados.
+
+El router no ejecuta todos los subagentes por costumbre. `Explorer` se usa para
+tareas que requieren contexto del repo; `Researcher` se usa cuando hace falta
+evidencia tecnica, RAG, memoria o web. En tareas de implementacion, si
+`Implementer` termina sin un `write_file` exitoso, `Tester` se saltea y queda
+registrada una observacion en `TaskState`.
+
+Cada subagente devuelve `status`, `summary`, `evidence`, `files_changed`,
+`blockers` y `recommendation`. Las fuentes y tool calls quedan registradas con
+el subagente responsable para que el brief final no pierda trazabilidad. Si
+`Reviewer` pide cambios, la tarea queda como `changes_requested` y la respuesta
+final lo aclara.
+
+Tools permitidas por rol:
+
+```text
+Explorer:    list_files, read_file, search_rag, read_project_memory
+Researcher:  search_rag, web_search, read_project_memory
+Implementer: read_file, write_file, list_files
+Tester:      run_command, read_file
+Reviewer:    read_file, run_command
+```
 
 ### `tools/`
 
@@ -138,23 +165,17 @@ tree_files
 search_code
 view_file
 rag_search
+search_rag
 remember_decision
 remember_command
 memory_context
+read_project_memory
 ```
 
-Tambien existen wrappers estilo Command:
-
-```text
-FileTool
-TerminalTool
-GitTool
-TestRunnerTool
-CodeSearchTool
-```
-
-Estos wrappers complementan al registry de tools. Sirven para mantener una
-interfaz comun e inyectable, sin romper el harness existente.
+`web_search` no queda librada solo al prompt: el harness aplica una politica
+RAG-first. Si un subagente intenta usar web sin haber llamado antes a
+`search_rag` o `rag_search`, la tool se bloquea y queda registrada como
+`allowed=False` en `TaskState.tool_calls`.
 
 ### `rag/`
 
@@ -379,7 +400,7 @@ Actualmente cubren:
 - memoria persistente;
 - permisos;
 - RAG/vector store local;
-- tools estilo Command.
+- funciones de tools y registry.
 
 Compilacion completa:
 

@@ -29,7 +29,12 @@ def normalize_tool_args(tool_name: str, args: dict, config: dict) -> dict:
             resolve_workspace_path(args.get("directory", "."), config)
         )
 
-    if tool_name in ("remember_decision", "remember_command", "memory_context"):
+    if tool_name in (
+        "remember_decision",
+        "remember_command",
+        "memory_context",
+        "read_project_memory",
+    ):
         normalized_args["storage_path"] = config.get("memory", {}).get(
             "path",
             "memory/project_memory.json",

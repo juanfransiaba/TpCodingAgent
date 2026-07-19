@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from pathlib import Path
 
@@ -137,7 +138,7 @@ class CodingAgentOrchestrator:
             self.conversation.insert_before_last(coordination_message)
 
             try:
-                return self.run_agent_turn(
+                response, iterations = self.run_agent_turn(
                     messages=self.conversation.messages,
                     config=self.config,
                     supervision=self.supervision,
@@ -145,6 +146,7 @@ class CodingAgentOrchestrator:
                     trace=trace,
                     max_iterations=self.settings.max_iterations,
                 )
+                return apply_reviewer_decision_to_response(task_state, response), iterations
             finally:
                 if coordination_message in self.conversation.messages:
                     self.conversation.remove(coordination_message)
@@ -154,10 +156,14 @@ class CodingAgentOrchestrator:
         task_state: TaskState,
         trace: TraceRecorder,
     ) -> dict:
-        coordination_content = self.prepare_task(
+        coordination_content = call_prepare_task(
+            self.prepare_task,
             task_state,
             self.config,
             memory=self.memory,
+            run_agent_turn_fn=self.run_agent_turn,
+            supervision=self.supervision,
+            trace=trace,
         )
         trace.record_event(
             "coordination_brief",
@@ -177,8 +183,11 @@ class CodingAgentOrchestrator:
     ) -> tuple[Path, Path]:
         self.total_iterations += iterations
 
-        if task_state.status != "blocked":
+        if task_state.status == "running":
             task_state.mark_completed(response)
+        else:
+            task_state.final_response = response
+            task_state.touch()
 
         self.execution_memory.record(task_state)
         self.memory.record_task_state(task_state)
@@ -221,3 +230,62 @@ class CodingAgentOrchestrator:
 
         self.io.write("Plan approved. Executing...\n")
         return True
+
+
+def call_prepare_task(
+    prepare_task_fn: Callable[..., str],
+    task_state: TaskState,
+    config: dict,
+    **kwargs,
+) -> str:
+    """Call injected task preparers without requiring every optional kwarg."""
+
+    signature = inspect.signature(prepare_task_fn)
+    accepts_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+    if accepts_kwargs:
+        supported_kwargs = kwargs
+    else:
+        supported_kwargs = {
+            name: value
+            for name, value in kwargs.items()
+            if name in signature.parameters
+        }
+
+    return prepare_task_fn(task_state, config, **supported_kwargs)
+
+
+def apply_reviewer_decision_to_response(
+    task_state: TaskState,
+    response: str,
+) -> str:
+    reviewer_result = latest_reviewer_result(task_state)
+
+    if not reviewer_result:
+        return response
+
+    if reviewer_result.recommendation == "changes_requested":
+        warning = (
+            "Reviewer decision: changes_requested. Treat this task as needing "
+            "follow-up before considering it done."
+        )
+        return f"{warning}\n\n{response}"
+
+    if reviewer_result.recommendation == "blocked":
+        warning = "Reviewer decision: blocked. The task could not be accepted."
+        if task_state.status != "blocked":
+            task_state.mark_blocked(warning)
+        return f"{warning}\n\n{response}"
+
+    return response
+
+
+def latest_reviewer_result(task_state: TaskState):
+    for result in reversed(task_state.agent_results):
+        if result.agent_name == "reviewer":
+            return result
+
+    return None

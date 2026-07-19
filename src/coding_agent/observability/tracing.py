@@ -139,8 +139,10 @@ class TraceRecorder:
         result: str,
         iteration: int,
         latency_seconds: float,
+        agent_name: str = "",
     ) -> None:
         metadata = {
+            "agent_name": agent_name,
             "tool_name": tool_name,
             "args": args,
             "allowed": allowed,
@@ -346,7 +348,7 @@ def aggregate_cost(events: list[dict[str, Any]]) -> float | None:
 
 
 def extract_sources_from_tool_result(tool_name: str, result: str) -> list[str]:
-    if tool_name == "rag_search":
+    if tool_name in ("rag_search", "search_rag"):
         return [
             line.removeprefix("Fuente:").strip()
             for line in result.splitlines()

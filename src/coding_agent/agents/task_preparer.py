@@ -1,14 +1,16 @@
-from coding_agent.agents import explorer, researcher
 from coding_agent.agents.pipeline import default_pipeline
 from coding_agent.core.contracts import AgentContext, MemoryStore
 from coding_agent.core.task_state import TaskState
-from coding_agent.rag.retriever import LocalRetriever
+from coding_agent.runtime.harness import run_agent_turn
 
 
 def prepare_task(
     task_state: TaskState,
     config: dict,
     memory: MemoryStore | None = None,
+    run_agent_turn_fn=run_agent_turn,
+    supervision: bool = False,
+    trace=None,
 ) -> str:
     """Run lightweight evidence agents and the specialized agent pipeline."""
 
@@ -17,15 +19,14 @@ def prepare_task(
     context = AgentContext(
         config=config,
         memory=memory,
-        retriever=LocalRetriever(),
     )
-    pipeline = default_pipeline()
+    pipeline = default_pipeline(
+        run_agent_turn_fn=run_agent_turn_fn,
+        supervision=supervision,
+        trace=trace,
+    )
 
-    subagent_summaries = [
-        explorer.run(task_state, config),
-        researcher.run(task_state, config, memory=memory),
-    ]
-    subagent_summaries.extend(pipeline.run(task_state, context))
+    subagent_summaries = pipeline.run(task_state, context)
 
     task_state.add_progress("Task preparer finished subagent coordination.")
 
@@ -63,9 +64,48 @@ def build_coordination_brief(
         brief_lines.append("")
         brief_lines.append("Sources recorded:")
         brief_lines.extend(
-            f"- [{source.kind}] {source.title}: {source.location}"
+            (
+                f"- [{source.kind}] {source.title}: {source.location}"
+                f"{format_source_detail(source.agent_name, source.query)}"
+            )
             for source in task_state.sources
         )
+
+    if (
+        task_state.tool_calls
+        or task_state.files_modified
+        or task_state.observations
+        or task_state.errors
+    ):
+        brief_lines.append("")
+        brief_lines.append("Execution evidence:")
+
+        if task_state.files_modified:
+            brief_lines.append("- Files modified:")
+            brief_lines.extend(f"  - {path}" for path in task_state.files_modified)
+
+        if task_state.tool_calls:
+            brief_lines.append("- Tool calls:")
+            brief_lines.extend(
+                (
+                    f"  - {tool_call.tool_name} "
+                    f"agent={tool_call.agent_name or 'unknown'} "
+                    f"allowed={tool_call.allowed} "
+                    f"iteration={tool_call.iteration}"
+                )
+                for tool_call in task_state.tool_calls[-12:]
+            )
+
+        if task_state.observations:
+            brief_lines.append("- Observations:")
+            brief_lines.extend(
+                f"  - {observation}"
+                for observation in task_state.observations[-5:]
+            )
+
+        if task_state.errors:
+            brief_lines.append("- Errors:")
+            brief_lines.extend(f"  - {error}" for error in task_state.errors[-5:])
 
     brief_lines.extend(
         [
@@ -78,3 +118,18 @@ def build_coordination_brief(
     )
 
     return "\n".join(brief_lines)
+
+
+def format_source_detail(agent_name: str, query: str) -> str:
+    details: list[str] = []
+
+    if agent_name:
+        details.append(f"agent={agent_name}")
+
+    if query:
+        details.append(f"query={query}")
+
+    if not details:
+        return ""
+
+    return f" ({', '.join(details)})"

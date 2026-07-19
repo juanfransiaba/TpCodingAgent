@@ -62,6 +62,43 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(messages[-1]["role"], "assistant")
         self.assertEqual(task_state.agent_results[-1].agent_name, "llm_agent")
 
+    def test_run_agent_turn_records_custom_agent_name(self):
+        messages = [{"role": "user", "content": "hola"}]
+        task_state = TaskState(original_request="hola")
+        llm = FakeLLMClient([("respuesta final", None)])
+
+        run_agent_turn(
+            messages=messages,
+            config={"workspace": "."},
+            task_state=task_state,
+            llm_client=llm,
+            tools=[],
+            tool_functions={},
+            verbose=False,
+            agent_name="explorer",
+        )
+
+        self.assertEqual(task_state.agent_results[-1].agent_name, "explorer")
+
+    def test_run_agent_turn_can_leave_agent_result_to_caller(self):
+        messages = [{"role": "user", "content": "hola"}]
+        task_state = TaskState(original_request="hola")
+        llm = FakeLLMClient([("respuesta final", None)])
+
+        run_agent_turn(
+            messages=messages,
+            config={"workspace": "."},
+            task_state=task_state,
+            llm_client=llm,
+            tools=[],
+            tool_functions={},
+            verbose=False,
+            agent_name="explorer",
+            record_agent_result=False,
+        )
+
+        self.assertEqual(task_state.agent_results, [])
+
     def test_run_agent_turn_executes_injected_tool_function(self):
         messages = [{"role": "user", "content": "usa echo"}]
         task_state = TaskState(original_request="usa echo")
@@ -92,6 +129,81 @@ class HarnessTests(unittest.TestCase):
         self.assertTrue(
             any(message.get("role") == "tool" for message in messages)
         )
+
+    def test_run_agent_turn_blocks_web_search_before_rag(self):
+        messages = [{"role": "user", "content": "busca web"}]
+        task_state = TaskState(original_request="busca web")
+        llm = FakeLLMClient(
+            [
+                ("", [make_tool_call("web_search", {"query": "pytest"})]),
+                ("primero necesito RAG", None),
+            ]
+        )
+        calls = []
+
+        def web_search(query):
+            calls.append(query)
+            return "web result"
+
+        response, iterations = run_agent_turn(
+            messages=messages,
+            config={"workspace": "."},
+            task_state=task_state,
+            llm_client=llm,
+            tools=[],
+            tool_functions={"web_search": web_search},
+            verbose=False,
+            agent_name="researcher",
+        )
+
+        self.assertEqual(response, "primero necesito RAG")
+        self.assertEqual(iterations, 2)
+        self.assertEqual(calls, [])
+        self.assertFalse(task_state.tool_calls[0].allowed)
+        self.assertIn("RAG-first policy", task_state.tool_calls[0].result_preview)
+
+    def test_run_agent_turn_allows_web_search_after_rag_attempt(self):
+        messages = [{"role": "user", "content": "busca docs"}]
+        task_state = TaskState(original_request="busca docs")
+        llm = FakeLLMClient(
+            [
+                ("", [make_tool_call("search_rag", {"query": "pytest"})]),
+                ("", [make_tool_call("web_search", {"query": "pytest"})]),
+                ("respuesta con evidencia", None),
+            ]
+        )
+        calls = []
+
+        def search_rag(query):
+            calls.append(("search_rag", query))
+            return "No RAG results found."
+
+        def web_search(query):
+            calls.append(("web_search", query))
+            return "Results:\n  https://example.com/pytest\n"
+
+        response, iterations = run_agent_turn(
+            messages=messages,
+            config={"workspace": "."},
+            task_state=task_state,
+            llm_client=llm,
+            tools=[],
+            tool_functions={
+                "search_rag": search_rag,
+                "web_search": web_search,
+            },
+            verbose=False,
+            agent_name="researcher",
+        )
+
+        self.assertEqual(response, "respuesta con evidencia")
+        self.assertEqual(iterations, 3)
+        self.assertEqual(
+            calls,
+            [("search_rag", "pytest"), ("web_search", "pytest")],
+        )
+        self.assertTrue(task_state.tool_calls[0].allowed)
+        self.assertTrue(task_state.tool_calls[1].allowed)
 
     def test_run_agent_turn_stops_at_max_iterations(self):
         messages = [{"role": "user", "content": "usa echo"}]

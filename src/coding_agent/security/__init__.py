@@ -1,4 +1,5 @@
 from coding_agent.security.approval import APPROVAL_VALUES, is_approved
+from coding_agent.security.evidence_policy import check_rag_before_web
 from coding_agent.security.permissions import (
     check_command,
     check_path,
@@ -17,6 +18,7 @@ __all__ = [
     "check_command",
     "check_path",
     "check_permissions",
+    "check_rag_before_web",
     "get_workspace",
     "is_approved",
     "matches_denied_path",
