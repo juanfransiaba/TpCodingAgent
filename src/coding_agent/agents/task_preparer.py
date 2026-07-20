@@ -1,6 +1,7 @@
 from coding_agent.agents.pipeline import default_pipeline
 from coding_agent.core.contracts import AgentContext, MemoryStore
 from coding_agent.core.task_state import TaskState
+from coding_agent.llm.client import default_llm_client
 from coding_agent.runtime.harness import run_agent_turn
 
 
@@ -19,6 +20,7 @@ def prepare_task(
     context = AgentContext(
         config=config,
         memory=memory,
+        llm=default_llm_client,
     )
     pipeline = default_pipeline(
         run_agent_turn_fn=run_agent_turn_fn,

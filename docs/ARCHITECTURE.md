@@ -153,8 +153,10 @@ Roles:
 
 - `SubagentSpec`: define responsabilidad, prompt, tools permitidas y limite de
   iteraciones por subagente.
-- `SubagentRouter`: devuelve un `RoutePlan` con subagentes seleccionados,
-  subagentes salteados y el motivo de cada decision.
+- `SubagentRouter`: coordina clasificacion LLM, parseo y policy de ruteo para
+  devolver un `RoutePlan` validado con subagentes seleccionados, subagentes
+  salteados y el motivo de cada decision. Si el LLM falla o devuelve JSON
+  invalido, la tarea falla explicitamente en vez de inventar una ruta local.
 - `SubagentRunResult`: normaliza la respuesta de cada subagente como `status`,
   `summary`, `evidence`, `files_changed`, `blockers` y `recommendation`.
 - `Explorer`: entiende estructura, arquitectura, dependencias, convenciones y archivos relevantes.
@@ -166,16 +168,17 @@ Roles:
   escritura.
 
 El `AgentPipeline` conserva el nombre historico para compatibilidad, pero ya no
-ejecuta un flujo fijo. Ahora coordina un ruteo por tarea. Por ejemplo, una tarea
-de investigacion puede usar solo `Researcher`, mientras que una tarea de cambio
-de codigo puede usar `Explorer -> Researcher -> Implementer -> Tester -> Reviewer`
-si el router detecta que esas capacidades son necesarias.
+ejecuta un flujo fijo. Ahora coordina un ruteo por tarea decidido por el
+clasificador LLM del router. Por ejemplo, una tarea de investigacion puede usar
+solo `Researcher`, mientras que una tarea de cambio de codigo puede usar
+`Explorer -> Implementer -> Tester -> Reviewer` y sumar `Researcher` solo si el
+pedido requiere documentacion, RAG, memoria o web.
 
-El ruteo tambien corta pasos que ya no tienen sentido. En una tarea de
-implementacion, si `Implementer` no produjo ningun `write_file` exitoso,
-`Tester` no se ejecuta; el motivo queda registrado en `TaskState.observations`.
-`Researcher` tampoco corre siempre: solo cuando la tarea pide investigacion,
-arquitectura, RAG/web/memoria o falta evidencia tecnica.
+El ruteo tambien aplica invariantes de arquitectura. Si el LLM selecciona
+`Implementer`, el router garantiza `Explorer`, `Tester` y `Reviewer` alrededor
+del cambio. Si selecciona `Tester`, garantiza `Reviewer`. Despues, si
+`Implementer` no produjo ningun `write_file` exitoso, `Tester` no se ejecuta; el
+motivo queda registrado en `TaskState.observations`.
 
 Si `Reviewer` devuelve `changes_requested`, el orquestador conserva ese estado
 en lugar de marcar la tarea como `completed`, y antepone una advertencia a la
@@ -337,6 +340,7 @@ En Langfuse el span raiz `coding-agent-task` contiene un span por subagente
 (`agent-explorer`, `agent-implementer`, etc.). Las generaciones LLM y tool calls
 del harness se crean dentro de ese contexto, por lo que quedan anidadas bajo el
 subagente responsable y tambien mantienen `agent_name` en metadata.
+La clasificacion inicial del router se registra como `router-classification`.
 
 ## Caso de uso
 

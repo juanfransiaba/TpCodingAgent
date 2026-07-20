@@ -3,13 +3,30 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from coding_agent.agents.pipeline import default_pipeline
-from coding_agent.agents.router import SubagentRouter
 from coding_agent.core.contracts import AgentContext
 from coding_agent.core.task_state import TaskState
+
+
+class FakeRouterLLM:
+    model = "fake-router-model"
+
+    def __init__(self, content):
+        self.content = content
+
+    def chat(self, messages, **kwargs):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=self.content),
+                )
+            ],
+            usage=None,
+        )
 
 
 class FakeTrace:
@@ -28,31 +45,44 @@ class FakeTrace:
             self.finished.append(self.active_subagents.pop())
 
 
+def fake_route_llm(selected, skipped=None):
+    return FakeRouterLLM(
+        json.dumps(
+            {
+                "selected": selected,
+                "skipped": skipped or [],
+            }
+        )
+    )
+
+
+IMPLEMENTATION_ROUTE = [
+    {
+        "name": "explorer",
+        "reason": "the request needs repository context or implementation evidence",
+    },
+    {
+        "name": "implementer",
+        "reason": "the request asks for concrete code changes",
+    },
+    {
+        "name": "tester",
+        "reason": "implementation work should be validated after writes",
+    },
+    {
+        "name": "reviewer",
+        "reason": "implementation work should be reviewed against the request",
+    },
+]
+
+
 class AgentPipelineTests(unittest.TestCase):
-    def test_router_selects_implementation_agents_without_fixed_pipeline(self):
-        route = SubagentRouter().route("refactor del agente con ruteo")
-
-        self.assertEqual(
-            route.selected_names,
-            ["explorer", "researcher", "implementer", "tester", "reviewer"],
-        )
-        self.assertEqual(
-            route.reason_for("implementer"),
-            "the request asks for concrete code changes",
-        )
-
-    def test_router_skips_implementation_agents_for_research_only_request(self):
-        route = SubagentRouter().route("investiga documentacion sobre arquitectura")
-
-        self.assertEqual(
-            route.selected_names,
-            ["researcher"],
-        )
-        self.assertIn("implementer", [entry.name for entry in route.skipped])
-
     def test_pipeline_passes_scoped_tools_to_each_selected_subagent(self):
         state = TaskState(original_request="arreglar agente")
-        context = AgentContext(config={"workspace": "."})
+        context = AgentContext(
+            config={"workspace": "."},
+            llm=fake_route_llm(IMPLEMENTATION_ROUTE),
+        )
         calls = []
 
         def fake_run_agent_turn(**kwargs):
@@ -141,7 +171,10 @@ class AgentPipelineTests(unittest.TestCase):
 
     def test_pipeline_wraps_each_selected_subagent_in_trace_context(self):
         state = TaskState(original_request="arreglar agente")
-        context = AgentContext(config={"workspace": "."})
+        context = AgentContext(
+            config={"workspace": "."},
+            llm=fake_route_llm(IMPLEMENTATION_ROUTE),
+        )
         trace = FakeTrace()
         active_contexts = []
 
@@ -201,7 +234,10 @@ class AgentPipelineTests(unittest.TestCase):
 
     def test_pipeline_skips_tester_when_implementer_makes_no_changes(self):
         state = TaskState(original_request="arreglar agente")
-        context = AgentContext(config={"workspace": "."})
+        context = AgentContext(
+            config={"workspace": "."},
+            llm=fake_route_llm(IMPLEMENTATION_ROUTE),
+        )
         calls = []
 
         def fake_run_agent_turn(**kwargs):
@@ -239,17 +275,19 @@ class AgentPipelineTests(unittest.TestCase):
             any("tester subagent skipped" in item for item in state.observations)
         )
 
-    def test_router_uses_explorer_only_for_repo_context_question(self):
-        route = SubagentRouter().route("explicame la arquitectura del agente")
-
-        self.assertEqual(
-            route.selected_names,
-            ["explorer", "researcher"],
-        )
-
     def test_reviewer_changes_requested_marks_task_state(self):
         state = TaskState(original_request="revisa diff")
-        context = AgentContext(config={"workspace": "."})
+        context = AgentContext(
+            config={"workspace": "."},
+            llm=fake_route_llm(
+                [
+                    {
+                        "name": "reviewer",
+                        "reason": "the request asks for review or diff analysis",
+                    }
+                ]
+            ),
+        )
 
         def fake_run_agent_turn(**kwargs):
             recommendation = (

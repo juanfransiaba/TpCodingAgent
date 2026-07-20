@@ -121,8 +121,9 @@ Contiene la logica de seguridad:
 Contiene agentes especializados:
 
 - `specs.py`: define responsabilidad, prompt y tools permitidas por subagente.
-- `router.py`: selecciona solo los subagentes utiles para el pedido y explica
-  por que selecciono o salteo cada rol.
+- `router.py`: coordina clasificacion LLM, parseo y policy de ruteo. Si el
+  clasificador falla o devuelve una ruta invalida, la tarea falla de forma
+  explicita en vez de inventar una decision local.
 - `results.py`: normaliza la salida de cada subagente como resultado estructurado.
 - `Explorer`: entiende estructura, arquitectura, dependencias y archivos relevantes.
 - `Researcher`: consulta RAG primero, memoria del proyecto y web solo si falta evidencia.
@@ -132,11 +133,13 @@ Contiene agentes especializados:
   `approved`, `changes_requested` o `blocked`, sin permiso de escritura.
 - `AgentPipeline`: mantiene el nombre historico, pero ahora coordina ruteo y ejecucion de subagentes seleccionados.
 
-El router no ejecuta todos los subagentes por costumbre. `Explorer` se usa para
-tareas que requieren contexto del repo; `Researcher` se usa cuando hace falta
-evidencia tecnica, RAG, memoria o web. En tareas de implementacion, si
-`Implementer` termina sin un `write_file` exitoso, `Tester` se saltea y queda
-registrada una observacion en `TaskState`.
+El router no ejecuta todos los subagentes por costumbre. Primero pide al LLM una
+clasificacion estructurada del pedido y luego valida esa salida contra los roles
+conocidos (`Explorer`, `Researcher`, `Implementer`, `Tester`, `Reviewer`). En
+tareas de implementacion aplica invariantes de arquitectura: debe haber contexto
+de repo antes de escribir y validacion/revision despues. Si `Implementer` termina
+sin un `write_file` exitoso, `Tester` se saltea y queda registrada una observacion
+en `TaskState`.
 
 Cada subagente devuelve `status`, `summary`, `evidence`, `files_changed`,
 `blockers` y `recommendation`. Las fuentes y tool calls quedan registradas con
@@ -226,6 +229,7 @@ La memoria persistente guarda:
 Tambien exporta a Langfuse si las variables de entorno estan configuradas.
 En Langfuse la jerarquia queda como `coding-agent-task -> agent-<nombre> -> llm/tool`,
 lo que permite inspeccionar cada subagente sin perder el trace global.
+La decision del router tambien se observa como `router-classification`.
 
 ## Instalacion
 

@@ -39,7 +39,11 @@ class AgentPipeline:
         self.trace = trace
 
     def run(self, state: AgentState, context: AgentContext) -> list[str]:
-        route_plan = self.router.route(state.original_request)
+        route_plan = self.router.route(
+            state.original_request,
+            llm_client=context.llm,
+            trace=self.trace,
+        )
         specs = route_plan.specs
         selected_names = ", ".join(route_plan.selected_names)
         state.add_progress(f"Subagent router selected: {selected_names}.")

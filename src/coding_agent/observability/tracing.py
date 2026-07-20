@@ -298,6 +298,7 @@ class TraceRecorder:
         usage: Any = None,
         error: str | None = None,
         agent_name: str = "",
+        observation_name: str | None = None,
     ) -> None:
         usage_details = extract_usage(usage)
         estimated_cost = estimate_cost(
@@ -310,6 +311,7 @@ class TraceRecorder:
             "timestamp": utc_now_iso(),
             "iteration": iteration,
             "agent_name": agent_name,
+            "observation_name": observation_name or f"llm-iteration-{iteration}",
             "model": model,
             "input": truncate(json_safe(messages), MAX_PROMPT_CHARS),
             "output": truncate(output, MAX_OUTPUT_CHARS),
@@ -326,7 +328,7 @@ class TraceRecorder:
         try:
             with self.langfuse.start_as_current_observation(
                 as_type="generation",
-                name=f"llm-iteration-{iteration}",
+                name=observation_name or f"llm-iteration-{iteration}",
                 model=model,
             ) as generation:
                 generation.update(
