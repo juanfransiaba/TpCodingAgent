@@ -23,7 +23,7 @@ en `runs/traces/<task_id>.json` y estado en `runs/task_states/<task_id>.json`.
 
 ## Corrida 1 — RAG + agregar la feature (Tarea A)
 
-- **task_id:** `<task_id: completar tras correr>`
+- **task_id:** `d791ea4ec4c44190b110c03bcbf15dcc`
 
 ### Prompt usado
 ```text
@@ -54,7 +54,7 @@ entonces el Implementer escribe siguiendo la convención del repo (lanzar
 
 ## Corrida 2 — Uso de memoria persistente (Tarea B)
 
-- **task_id:** `<task_id: completar tras correr>`
+- **task_id:** `9fc26c5514b04be3b6bd519faaa778bc`
 
 ### Prompt usado
 ```text
@@ -80,7 +80,7 @@ y no de inferencia propia.
 
 ## Corrida 3 — Cambio de estrategia / pedir ayuda (Tarea C)
 
-- **task_id:** `<task_id: completar tras correr>`
+- **task_id:** `dfdedb0eeace48dbbe4bf620459c1f9b`
 
 ### Prompt usado
 ```text

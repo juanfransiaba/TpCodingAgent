@@ -59,7 +59,7 @@ SUBAGENT_SPECS: dict[str, SubagentSpec] = {
             "write_file",
             "list_files",
         ),
-        max_iterations=8,
+        max_iterations=30,
     ),
     "tester": SubagentSpec(
         name="tester",

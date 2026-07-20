@@ -1,3 +1,4 @@
+import shlex
 from pathlib import Path
 
 
@@ -38,6 +39,12 @@ def normalize_tool_args(tool_name: str, args: dict, config: dict) -> dict:
         normalized_args["storage_path"] = config.get("memory", {}).get(
             "path",
             "memory/project_memory.json",
+        )
+
+    if tool_name == "run_command" and "command" in args:
+        workspace = get_workspace(config)
+        normalized_args["command"] = (
+            f"cd {shlex.quote(str(workspace))} && {args['command']}"
         )
 
     return normalized_args

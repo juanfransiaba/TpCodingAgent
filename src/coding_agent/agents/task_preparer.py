@@ -24,6 +24,7 @@ def prepare_task(
         run_agent_turn_fn=run_agent_turn_fn,
         supervision=supervision,
         trace=trace,
+        verbose=True,
     )
 
     subagent_summaries = pipeline.run(task_state, context)
