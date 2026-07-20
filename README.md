@@ -211,6 +211,7 @@ La memoria persistente guarda:
 
 - prompts,
 - modelo usado,
+- spans por subagente,
 - llamadas al LLM,
 - tools invocadas,
 - documentos RAG recuperados,
@@ -223,6 +224,8 @@ La memoria persistente guarda:
 - resultado final.
 
 Tambien exporta a Langfuse si las variables de entorno estan configuradas.
+En Langfuse la jerarquia queda como `coding-agent-task -> agent-<nombre> -> llm/tool`,
+lo que permite inspeccionar cada subagente sin perder el trace global.
 
 ## Instalacion
 
@@ -376,6 +379,8 @@ Las corridas usan:
 - llamada real al LLM;
 - trazas locales;
 - exportacion a Langfuse.
+  En Langfuse las iteraciones LLM y tools quedan anidadas bajo el span del
+  subagente que las ejecuto.
 
 Evidencia generada:
 

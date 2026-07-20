@@ -322,6 +322,7 @@ Registra:
 
 - prompts,
 - modelo,
+- spans por subagente,
 - llamadas al LLM,
 - tools,
 - RAG/web sources,
@@ -331,6 +332,11 @@ Registra:
 - tokens,
 - costo estimado,
 - resultado final.
+
+En Langfuse el span raiz `coding-agent-task` contiene un span por subagente
+(`agent-explorer`, `agent-implementer`, etc.). Las generaciones LLM y tool calls
+del harness se crean dentro de ese contexto, por lo que quedan anidadas bajo el
+subagente responsable y tambien mantienen `agent_name` en metadata.
 
 ## Caso de uso
 

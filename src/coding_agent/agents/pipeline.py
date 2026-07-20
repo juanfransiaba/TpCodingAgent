@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 from coding_agent.agents.results import (
@@ -70,7 +71,13 @@ class AgentPipeline:
                 f"({route_plan.reason_for(spec.name)}) with tools: "
                 f"{', '.join(spec.allowed_tools)}."
             )
-            summary = self.run_subagent(spec, state, context, summaries)
+            summary = self.run_subagent(
+                spec,
+                state,
+                context,
+                summaries,
+                route_plan.reason_for(spec.name),
+            )
             summaries.append(summary)
             state.add_progress(f"{spec.name} subagent finished.")
 
@@ -85,47 +92,54 @@ class AgentPipeline:
         state: AgentState,
         context: AgentContext,
         previous_summaries: list[str],
+        route_reason: str = "",
     ) -> str:
-        messages = build_subagent_messages(spec, state, context, previous_summaries)
-        agent_result_count = len(state.agent_results)
+        with trace_subagent_context(self.trace, spec, route_reason):
+            messages = build_subagent_messages(
+                spec,
+                state,
+                context,
+                previous_summaries,
+            )
+            agent_result_count = len(state.agent_results)
 
-        try:
-            response, iterations = self.run_agent_turn(
-                messages=messages,
-                config=context.config,
-                supervision=self.supervision,
-                task_state=state,
-                trace=self.trace,
-                llm_client=context.llm,
-                tools=tools_for(spec.allowed_tools),
-                tool_functions=tool_functions_for(spec.allowed_tools),
-                tools_with_supervision=supervised_tools_for(spec.allowed_tools),
-                verbose=self.verbose,
-                max_iterations=spec.max_iterations,
-                agent_name=spec.name,
-                record_agent_result=False,
-            )
-            result = parse_subagent_result(spec.name, response)
-            summary = format_subagent_summary(spec, result, iterations)
-        except Exception as error:
-            summary = f"{spec.name} subagent failed: {error}"
-            state.add_error(summary)
-            state.add_agent_result(
-                spec.name,
-                summary,
-                status="error",
-                blockers=[str(error)],
-                recommendation="blocked",
-            )
+            try:
+                response, iterations = self.run_agent_turn(
+                    messages=messages,
+                    config=context.config,
+                    supervision=self.supervision,
+                    task_state=state,
+                    trace=self.trace,
+                    llm_client=context.llm,
+                    tools=tools_for(spec.allowed_tools),
+                    tool_functions=tool_functions_for(spec.allowed_tools),
+                    tools_with_supervision=supervised_tools_for(spec.allowed_tools),
+                    verbose=self.verbose,
+                    max_iterations=spec.max_iterations,
+                    agent_name=spec.name,
+                    record_agent_result=False,
+                )
+                result = parse_subagent_result(spec.name, response)
+                summary = format_subagent_summary(spec, result, iterations)
+            except Exception as error:
+                summary = f"{spec.name} subagent failed: {error}"
+                state.add_error(summary)
+                state.add_agent_result(
+                    spec.name,
+                    summary,
+                    status="error",
+                    blockers=[str(error)],
+                    recommendation="blocked",
+                )
+                return summary
+
+            if len(state.agent_results) == agent_result_count:
+                record_subagent_result(state, result)
+
+            if spec.name == "reviewer":
+                apply_reviewer_decision(state, result)
+
             return summary
-
-        if len(state.agent_results) == agent_result_count:
-            record_subagent_result(state, result)
-
-        if spec.name == "reviewer":
-            apply_reviewer_decision(state, result)
-
-        return summary
 
 
 def build_subagent_messages(
@@ -292,6 +306,25 @@ def count_successful_writes(state: AgentState) -> int:
             and tool_call.allowed
             and tool_call.result_preview.startswith("File written successfully")
         )
+    )
+
+
+def trace_subagent_context(
+    trace: Any | None,
+    spec: SubagentSpec,
+    route_reason: str,
+):
+    if not trace or not hasattr(trace, "trace_subagent"):
+        return nullcontext()
+
+    return trace.trace_subagent(
+        spec.name,
+        metadata={
+            "route_reason": route_reason,
+            "responsibility": spec.responsibility,
+            "allowed_tools": list(spec.allowed_tools),
+            "max_iterations": spec.max_iterations,
+        },
     )
 
 

@@ -177,6 +177,7 @@ def call_llm(
                 latency_seconds=latency_seconds,
                 usage=None,
                 error=str(error),
+                agent_name=harness.agent_name,
             )
         raise
 
@@ -191,6 +192,7 @@ def call_llm(
             output=msg.content or "",
             latency_seconds=latency_seconds,
             usage=getattr(response, "usage", None),
+            agent_name=harness.agent_name,
         )
 
     return response

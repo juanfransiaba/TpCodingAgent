@@ -103,8 +103,9 @@ expuesto como la tool `rag_search`.
 
 ## 7. Observabilidad
 
-Cada corrida se registra en `TraceRecorder`: prompts, modelo, llamadas al LLM, tools, fuentes
-RAG/web, iteraciones, errores, latencia, tokens, costo estimado y resultado final. Guarda
+Cada corrida se registra en `TraceRecorder`: prompts, modelo, spans por subagente,
+llamadas al LLM, tools, fuentes RAG/web, iteraciones, errores, latencia, tokens,
+costo estimado y resultado final. Guarda
 **trazas locales** en `runs/traces/<id>.json` (independiente de servicios externos) y exporta
 a **Langfuse**.
 
@@ -117,8 +118,9 @@ LANGFUSE_HOST=https://us.cloud.langfuse.com
 ```
 
 Para la captura (entregable 7): dashboard de Langfuse → filtrar por nombre `coding-agent-task`
-→ abrir una traza (muestra el árbol de spans: brief, iteraciones LLM, tool calls con sus
-resultados, tokens, latencia y costo). Los `task_id` de cada corrida están en [`docs/EVIDENCE.md`](EVIDENCE.md).
+→ abrir una traza (muestra el árbol de spans: `agent-explorer`,
+`agent-implementer`, etc., con sus iteraciones LLM, tool calls, resultados,
+tokens, latencia y costo). Los `task_id` de cada corrida están en [`docs/EVIDENCE.md`](EVIDENCE.md).
 
 ---
 

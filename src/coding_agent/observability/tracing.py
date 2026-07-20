@@ -38,16 +38,15 @@ class TraceRecorder:
 
     @contextmanager
     def trace_task(self):
-        if not self.langfuse:
-            yield self
-            return
-
-        try:
-            with self.langfuse.start_as_current_observation(
-                as_type="span",
-                name="coding-agent-task",
-            ) as span:
-                span.update(
+        with self._langfuse_observation(
+            as_type="span",
+            name="coding-agent-task",
+            error_name="langfuse_trace_task",
+        ) as span:
+            if span:
+                self._update_observation(
+                    span,
+                    "langfuse_trace_task",
                     input=self.task_state.original_request,
                     metadata={
                         "task_id": self.task_state.task_id,
@@ -55,14 +54,225 @@ class TraceRecorder:
                         "workspace": self.config.get("workspace"),
                     },
                 )
+
+            try:
                 yield self
-                span.update(
-                    output=truncate(self.final_output, MAX_OUTPUT_CHARS),
-                    metadata=self.summary_metadata(),
+
+            except Exception as error:
+                if span:
+                    metadata = self.summary_metadata()
+                    metadata["error"] = sanitize(str(error))
+                    self._update_observation(
+                        span,
+                        "langfuse_trace_task",
+                        output=truncate(self.final_output, MAX_OUTPUT_CHARS),
+                        metadata=metadata,
+                    )
+                raise
+
+            else:
+                if span:
+                    self._update_observation(
+                        span,
+                        "langfuse_trace_task",
+                        output=truncate(self.final_output, MAX_OUTPUT_CHARS),
+                        metadata=self.summary_metadata(),
+                    )
+
+    @contextmanager
+    def trace_subagent(
+        self,
+        agent_name: str,
+        metadata: dict[str, Any] | None = None,
+    ):
+        started_at = time.perf_counter()
+        base_metadata = {
+            "task_id": self.task_state.task_id,
+            "agent_name": agent_name,
+            **(metadata or {}),
+        }
+        initial_counts = {
+            "tool_calls": len(self.task_state.tool_calls),
+            "sources": len(self.task_state.sources),
+            "agent_results": len(self.task_state.agent_results),
+            "errors": len(self.task_state.errors),
+        }
+        self.record_event("subagent_started", metadata=base_metadata)
+
+        with self._langfuse_observation(
+            as_type="span",
+            name=f"agent-{agent_name}",
+            error_name="langfuse_subagent",
+        ) as span:
+            if span:
+                self._update_observation(
+                    span,
+                    "langfuse_subagent",
+                    input={
+                        "request": self.task_state.original_request,
+                        "agent_name": agent_name,
+                    },
+                    metadata=base_metadata,
                 )
+
+            try:
+                yield self
+
+            except Exception as error:
+                final_metadata = self._subagent_finish_metadata(
+                    agent_name=agent_name,
+                    started_at=started_at,
+                    base_metadata=base_metadata,
+                    initial_counts=initial_counts,
+                    status="error",
+                    error=str(error),
+                )
+                if span:
+                    self._update_observation(
+                        span,
+                        "langfuse_subagent",
+                        output=self._subagent_output(agent_name),
+                        metadata=final_metadata,
+                    )
+                self.record_event("subagent_finished", metadata=final_metadata)
+                raise
+
+            else:
+                final_metadata = self._subagent_finish_metadata(
+                    agent_name=agent_name,
+                    started_at=started_at,
+                    base_metadata=base_metadata,
+                    initial_counts=initial_counts,
+                    status="completed",
+                )
+                if span:
+                    self._update_observation(
+                        span,
+                        "langfuse_subagent",
+                        output=self._subagent_output(agent_name),
+                        metadata=final_metadata,
+                    )
+                self.record_event("subagent_finished", metadata=final_metadata)
+
+    @contextmanager
+    def _langfuse_observation(
+        self,
+        as_type: str,
+        name: str,
+        error_name: str,
+        **kwargs,
+    ):
+        if not self.langfuse:
+            yield None
+            return
+
+        manager = None
+
+        try:
+            manager = self.langfuse.start_as_current_observation(
+                as_type=as_type,
+                name=name,
+                **kwargs,
+            )
+            observation = manager.__enter__()
         except Exception as error:
-            self.record_error("langfuse_trace_task", error)
-            yield self
+            self.record_error(error_name, error)
+            yield None
+            return
+
+        exc_info = (None, None, None)
+
+        try:
+            yield observation
+        except Exception as error:
+            exc_info = (type(error), error, error.__traceback__)
+            raise
+        finally:
+            try:
+                manager.__exit__(*exc_info)
+            except Exception as error:
+                self.record_error(error_name, error)
+
+    def _update_observation(
+        self,
+        observation,
+        error_name: str,
+        **kwargs,
+    ) -> None:
+        try:
+            observation.update(**kwargs)
+        except Exception as error:
+            self.record_error(error_name, error)
+
+    def _subagent_finish_metadata(
+        self,
+        agent_name: str,
+        started_at: float,
+        base_metadata: dict[str, Any],
+        initial_counts: dict[str, int],
+        status: str,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        new_tool_calls = self.task_state.tool_calls[initial_counts["tool_calls"] :]
+        agent_tool_calls = [
+            tool_call
+            for tool_call in new_tool_calls
+            if tool_call.agent_name == agent_name
+        ]
+        new_sources = self.task_state.sources[initial_counts["sources"] :]
+        agent_sources = [
+            source.location
+            for source in new_sources
+            if source.agent_name == agent_name
+        ]
+        initial_agent_result_count = initial_counts["agent_results"]
+        new_agent_results = self.task_state.agent_results[
+            initial_agent_result_count:
+        ]
+        for result in reversed(new_agent_results):
+            if result.agent_name == agent_name:
+                status = result.status
+                break
+
+        files_modified = [
+            str(tool_call.args["path"])
+            for tool_call in agent_tool_calls
+            if (
+                tool_call.tool_name == "write_file"
+                and tool_call.allowed
+                and "path" in tool_call.args
+            )
+        ]
+        metadata = {
+            **base_metadata,
+            "status": status,
+            "duration_seconds": round(time.perf_counter() - started_at, 4),
+            "tool_calls": len(agent_tool_calls),
+            "sources": agent_sources,
+            "files_modified": sorted(set(files_modified)),
+            "errors": self.task_state.errors[initial_counts["errors"] :],
+        }
+
+        if error:
+            metadata["error"] = sanitize(error)
+
+        return metadata
+
+    def _subagent_output(self, agent_name: str) -> dict[str, Any] | str:
+        for result in reversed(self.task_state.agent_results):
+            if result.agent_name != agent_name:
+                continue
+
+            return {
+                "status": result.status,
+                "summary": result.summary,
+                "evidence": result.evidence,
+                "files_changed": result.files_changed,
+                "blockers": result.blockers,
+                "recommendation": result.recommendation,
+            }
+
+        return ""
 
     def record_event(
         self,
@@ -87,6 +297,7 @@ class TraceRecorder:
         latency_seconds: float,
         usage: Any = None,
         error: str | None = None,
+        agent_name: str = "",
     ) -> None:
         usage_details = extract_usage(usage)
         estimated_cost = estimate_cost(
@@ -98,6 +309,7 @@ class TraceRecorder:
             "type": "llm_call",
             "timestamp": utc_now_iso(),
             "iteration": iteration,
+            "agent_name": agent_name,
             "model": model,
             "input": truncate(json_safe(messages), MAX_PROMPT_CHARS),
             "output": truncate(output, MAX_OUTPUT_CHARS),
@@ -122,6 +334,7 @@ class TraceRecorder:
                     output=payload["output"],
                     metadata={
                         "iteration": iteration,
+                        "agent_name": agent_name,
                         "latency_seconds": payload["latency_seconds"],
                         "estimated_cost_usd": estimated_cost,
                         "error": error,
