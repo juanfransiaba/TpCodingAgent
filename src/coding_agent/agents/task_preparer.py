@@ -1,4 +1,4 @@
-from coding_agent.agents.pipeline import default_pipeline
+from coding_agent.agents.coordinator import default_coordinator
 from coding_agent.core.contracts import AgentContext, MemoryStore
 from coding_agent.core.task_state import TaskState
 from coding_agent.llm.client import default_llm_client
@@ -13,7 +13,7 @@ def prepare_task(
     supervision: bool = False,
     trace=None,
 ) -> str:
-    """Run lightweight evidence agents and the specialized agent pipeline."""
+    """Run lightweight evidence agents and build the subagent brief."""
 
     task_state.add_progress("Task preparer started subagent coordination.")
 
@@ -22,14 +22,14 @@ def prepare_task(
         memory=memory,
         llm=default_llm_client,
     )
-    pipeline = default_pipeline(
+    coordinator = default_coordinator(
         run_agent_turn_fn=run_agent_turn_fn,
         supervision=supervision,
         trace=trace,
         verbose=True,
     )
 
-    subagent_summaries = pipeline.run(task_state, context)
+    subagent_summaries = coordinator.run(task_state, context)
 
     task_state.add_progress("Task preparer finished subagent coordination.")
 

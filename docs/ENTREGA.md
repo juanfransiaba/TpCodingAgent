@@ -64,9 +64,11 @@ Usuario → main.py → CodingAgentOrchestrator → TaskState (estado compartido
 - **Subagentes:** `Explorer`, `Researcher`, `Implementer`, `Tester` y `Reviewer`.
   El router clasifica el pedido con el LLM, elige solo los necesarios y registra
   el motivo de seleccion o skip.
-  Cada uno recibe un set propio de tools.
-  Ya no se ejecuta un pipeline fijo para todos los pedidos; si `Implementer`
-  no escribe cambios, `Tester` se saltea y el motivo queda en observaciones.
+  Cada uno tiene una clase concreta con comportamiento propio y recibe un set
+  propio de tools.
+  Ya no se ejecuta un flujo fijo para todos los pedidos: `SubagentCoordinator`
+  ejecuta solo la ruta seleccionada; si `Implementer` no escribe cambios,
+  `Tester` se saltea y el motivo queda en observaciones.
 - **Estado compartido (`TaskState`):** pedido, progreso, resultados de subagentes, fuentes
   y tool calls etiquetadas por subagente, archivos modificados, observaciones, errores,
   iteraciones y respuesta final.
@@ -140,8 +142,8 @@ tokens, latencia y costo). Los `task_id` de cada corrida están en [`docs/EVIDEN
 - **RAG específico del ecosistema.** Al apuntar el RAG a docs de NestJS/TypeScript, el agente
   respeta convenciones del repo objetivo (lanzar `NotFoundException` en vez de devolver
   `null`) que no infiere solo del código.
-- **Router de subagentes + tools por rol.** No se ejecuta un pipeline fijo: el router
-  clasifica la tarea con el LLM, valida la salida contra los roles conocidos y cada
+- **Router de subagentes + tools por rol.** No se ejecuta un flujo fijo: el router
+  clasifica la tarea con el LLM, el coordinator ejecuta la ruta validada y cada
   subagente tiene su set de tools; el Tester se saltea si el Implementer no escribió nada.
 
 ### Qué falló / aristas ásperas

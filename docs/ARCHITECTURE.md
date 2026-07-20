@@ -65,7 +65,7 @@ src/coding_agent/
   runtime/       orquestador, harness, IO y loop guard
   llm/           cliente OpenAI y planificacion
   security/      permisos y supervision humana
-  agents/        specs de subagentes, router y pipeline
+  agents/        specs, router, coordinator y subagentes
   tools/         tools concretas y registry para el LLM
   rag/           ingesta, embeddings, vector store y retrieval
   memory/        memoria conversacional, ejecucion y persistente
@@ -151,8 +151,14 @@ src/coding_agent/agents/
 
 Roles:
 
-- `SubagentSpec`: define responsabilidad, prompt, tools permitidas y limite de
-  iteraciones por subagente.
+- `SubagentSpec`: define metadata declarativa: responsabilidad, prompt, tools
+  permitidas y limite de iteraciones.
+- `subagents/base.py` y clases concretas en archivos por rol (`explorer.py`,
+  `researcher.py`, `implementer.py`, `tester.py`, `reviewer.py`): encapsulan
+  el comportamiento de cada rol, incluyendo armado de mensajes, trazas, skip y
+  post-proceso.
+- `SubagentRegistry`: resuelve el nombre seleccionado por el router a una
+  instancia concreta de subagente.
 - `SubagentRouter`: coordina clasificacion LLM, parseo y policy de ruteo para
   devolver un `RoutePlan` validado con subagentes seleccionados, subagentes
   salteados y el motivo de cada decision. Si el LLM falla o devuelve JSON
@@ -167,18 +173,19 @@ Roles:
   decision formal: `approved`, `changes_requested` o `blocked`, sin permiso de
   escritura.
 
-El `AgentPipeline` conserva el nombre historico para compatibilidad, pero ya no
-ejecuta un flujo fijo. Ahora coordina un ruteo por tarea decidido por el
-clasificador LLM del router. Por ejemplo, una tarea de investigacion puede usar
-solo `Researcher`, mientras que una tarea de cambio de codigo puede usar
-`Explorer -> Implementer -> Tester -> Reviewer` y sumar `Researcher` solo si el
-pedido requiere documentacion, RAG, memoria o web.
+El `SubagentCoordinator` no ejecuta un flujo fijo ni contiene comportamiento
+especifico de roles. Coordina un ruteo por tarea decidido por el clasificador
+LLM del router, busca cada rol en `SubagentRegistry` y delega la ejecucion a la
+clase concreta. Por ejemplo, una tarea de investigacion puede usar solo
+`Researcher`, mientras que una tarea de cambio de codigo puede usar `Explorer ->
+Implementer -> Tester -> Reviewer` y sumar `Researcher` solo si el pedido
+requiere documentacion, RAG, memoria o web.
 
 El ruteo tambien aplica invariantes de arquitectura. Si el LLM selecciona
 `Implementer`, el router garantiza `Explorer`, `Tester` y `Reviewer` alrededor
 del cambio. Si selecciona `Tester`, garantiza `Reviewer`. Despues, si
-`Implementer` no produjo ningun `write_file` exitoso, `Tester` no se ejecuta; el
-motivo queda registrado en `TaskState.observations`.
+`Implementer` no produjo ningun `write_file` exitoso, `TesterSubagent` decide
+saltearse; el motivo queda registrado en `TaskState.observations`.
 
 Si `Reviewer` devuelve `changes_requested`, el orquestador conserva ese estado
 en lugar de marcar la tarea como `completed`, y antepone una advertencia a la

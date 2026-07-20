@@ -1,35 +1,15 @@
-import json
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from coding_agent.agents.router import SubagentRouter
 from coding_agent.agents.route_models import RouteClassificationError
+from tests.fakes import FakeRouterLLM, fake_route_llm
 
 
-class FakeRouterLLM:
-    model = "fake-router-model"
-
-    def __init__(self, content):
-        self.content = content
-        self.calls = []
-
-    def chat(self, messages, **kwargs):
-        self.calls.append(messages)
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content=self.content),
-                )
-            ],
-            usage=None,
-        )
-
-
-class FakeTrace:
+class RouterTrace:
     def __init__(self):
         self.llm_calls = []
         self.errors = []
@@ -43,20 +23,15 @@ class FakeTrace:
 
 class SubagentRouterTests(unittest.TestCase):
     def test_router_uses_llm_classification(self):
-        llm = FakeRouterLLM(
-            json.dumps(
+        llm = fake_route_llm(
+            [
                 {
-                    "selected": [
-                        {
-                            "name": "implementer",
-                            "reason": "the user wants a concrete code change",
-                        }
-                    ],
-                    "skipped": [],
+                    "name": "implementer",
+                    "reason": "the user wants a concrete code change",
                 }
-            )
+            ]
         )
-        trace = FakeTrace()
+        trace = RouterTrace()
 
         route = SubagentRouter().route(
             "mandale mecha a la pantalla principal",
@@ -105,7 +80,7 @@ class SubagentRouterTests(unittest.TestCase):
 
     def test_router_rejects_invalid_llm_output_without_local_route_guessing(self):
         llm = FakeRouterLLM("no json here")
-        trace = FakeTrace()
+        trace = RouterTrace()
 
         with self.assertRaises(RouteClassificationError):
             SubagentRouter().route(

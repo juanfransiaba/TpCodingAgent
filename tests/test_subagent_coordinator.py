@@ -3,33 +3,16 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from coding_agent.agents.pipeline import default_pipeline
+from coding_agent.agents.coordinator import default_coordinator
 from coding_agent.core.contracts import AgentContext
 from coding_agent.core.task_state import TaskState
+from tests.fakes import fake_route_llm
 
 
-class FakeRouterLLM:
-    model = "fake-router-model"
-
-    def __init__(self, content):
-        self.content = content
-
-    def chat(self, messages, **kwargs):
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content=self.content),
-                )
-            ],
-            usage=None,
-        )
-
-
-class FakeTrace:
+class SubagentTrace:
     def __init__(self):
         self.active_subagents = []
         self.started = []
@@ -43,17 +26,6 @@ class FakeTrace:
             yield self
         finally:
             self.finished.append(self.active_subagents.pop())
-
-
-def fake_route_llm(selected, skipped=None):
-    return FakeRouterLLM(
-        json.dumps(
-            {
-                "selected": selected,
-                "skipped": skipped or [],
-            }
-        )
-    )
 
 
 IMPLEMENTATION_ROUTE = [
@@ -76,8 +48,8 @@ IMPLEMENTATION_ROUTE = [
 ]
 
 
-class AgentPipelineTests(unittest.TestCase):
-    def test_pipeline_passes_scoped_tools_to_each_selected_subagent(self):
+class SubagentCoordinatorTests(unittest.TestCase):
+    def test_coordinator_passes_scoped_tools_to_each_selected_subagent(self):
         state = TaskState(original_request="arreglar agente")
         context = AgentContext(
             config={"workspace": "."},
@@ -117,7 +89,7 @@ class AgentPipelineTests(unittest.TestCase):
                 }
             ), 1
 
-        summaries = default_pipeline(run_agent_turn_fn=fake_run_agent_turn).run(
+        summaries = default_coordinator(run_agent_turn_fn=fake_run_agent_turn).run(
             state,
             context,
         )
@@ -169,13 +141,13 @@ class AgentPipelineTests(unittest.TestCase):
             all("Tools allowed:" in summary for summary in summaries)
         )
 
-    def test_pipeline_wraps_each_selected_subagent_in_trace_context(self):
+    def test_coordinator_wraps_each_selected_subagent_in_trace_context(self):
         state = TaskState(original_request="arreglar agente")
         context = AgentContext(
             config={"workspace": "."},
             llm=fake_route_llm(IMPLEMENTATION_ROUTE),
         )
-        trace = FakeTrace()
+        trace = SubagentTrace()
         active_contexts = []
 
         def fake_run_agent_turn(**kwargs):
@@ -207,7 +179,7 @@ class AgentPipelineTests(unittest.TestCase):
                 }
             ), 1
 
-        default_pipeline(
+        default_coordinator(
             run_agent_turn_fn=fake_run_agent_turn,
             trace=trace,
         ).run(state, context)
@@ -232,7 +204,7 @@ class AgentPipelineTests(unittest.TestCase):
             ["read_file", "write_file", "list_files"],
         )
 
-    def test_pipeline_skips_tester_when_implementer_makes_no_changes(self):
+    def test_coordinator_skips_tester_when_implementer_makes_no_changes(self):
         state = TaskState(original_request="arreglar agente")
         context = AgentContext(
             config={"workspace": "."},
@@ -257,7 +229,7 @@ class AgentPipelineTests(unittest.TestCase):
                 }
             ), 1
 
-        summaries = default_pipeline(run_agent_turn_fn=fake_run_agent_turn).run(
+        summaries = default_coordinator(run_agent_turn_fn=fake_run_agent_turn).run(
             state,
             context,
         )
@@ -311,7 +283,7 @@ class AgentPipelineTests(unittest.TestCase):
                 }
             ), 1
 
-        default_pipeline(run_agent_turn_fn=fake_run_agent_turn).run(state, context)
+        default_coordinator(run_agent_turn_fn=fake_run_agent_turn).run(state, context)
 
         self.assertEqual(state.status, "changes_requested")
         self.assertEqual(state.agent_results[-1].agent_name, "reviewer")

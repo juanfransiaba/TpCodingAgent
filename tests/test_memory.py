@@ -17,7 +17,7 @@ class ProjectMemoryTests(unittest.TestCase):
 
             memory.remember_decision(
                 topic="architecture",
-                decision="Use an agent pipeline",
+                decision="Use a subagent coordinator",
                 rationale="It keeps responsibilities separated.",
             )
 
@@ -28,7 +28,7 @@ class ProjectMemoryTests(unittest.TestCase):
             reloaded = ProjectMemory(memory_path)
             context = reloaded.get_relevant_context()
 
-            self.assertIn("Use an agent pipeline", context)
+            self.assertIn("Use a subagent coordinator", context)
             self.assertIn("run local tests", context)
             self.assertIn("Tests completed.", context)
 
