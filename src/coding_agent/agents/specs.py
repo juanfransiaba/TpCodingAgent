@@ -28,10 +28,13 @@ SUBAGENT_SPECS: dict[str, SubagentSpec] = {
         prompt=EXPLORER_PROMPT,
         allowed_tools=(
             "list_files",
+            "tree_files",
+            "search_code",
             "read_file",
             "search_rag",
             "read_project_memory",
         ),
+        max_iterations=8,
     ),
     "researcher": SubagentSpec(
         name="researcher",
